@@ -24,11 +24,11 @@ The code has been tested to work with below tool versions
 ## Installation
 Plan is to publish this package to VSCode Marketplace and NPM. Until that is done easiest way to install is
 - For coc.nvim
-  * `cd <INSTALLATION PATH> && git clone <REPO>`
+  * `cd <INSTALLATION PATH> && git clone https://github.com/imc-trading/svlangserver.git`
   * `cd svlangserver && npm install`
   * Update the .vim/coc-settings.json to reflect the correct installation path
 - For VSCode
-  * `cd ~/.vscode/extensions && git clone <REPO>`
+  * `cd ~/.vscode/extensions && git clone https://github.com/imc-trading/svlangserver.git`
   * `cd svlangserver && npm install`
   * Enable the extension in VSCode
 
@@ -43,6 +43,10 @@ NOTE: This has been tested with npm version 6.14.11
 - `systemverilog.lintOnUnsaved`: _Boolean_, Lint even unsaved files
   * Default: *true*
 - `systemverilog.defines`: Defines for the project. Used by the language server as well as verilator linting
+  * Default: empty
+- `systemverilog.formatCommand`: verible-verilog-format command for code formatting
+  * Default: _verible-verilog-format_
+  * If not in path, replace _verible-verilog-format_ with the appropriate command
 - Example coc.nvim settings file
     ```json
     {
@@ -61,7 +65,7 @@ NOTE: This has been tested with npm version 6.14.11
         }
     }
     ```
-    For coc.nvim this file should be at `<WORKSPACE>/.vim/coc-settings.json`
+    For coc.nvim this file should be at `<WORKSPACE PATH>/.vim/coc-settings.json`
 - Example vscode settings file
     ```json
     {
@@ -72,7 +76,7 @@ NOTE: This has been tested with npm version 6.14.11
         "systemverilog.formatCommand": "<TOOL BINARY PATH>/verible-verilog-format"
     }
     ```
-    For vscode on linux this file should be at `<WORKSPACE>/.vscode/settings.json`
+    For vscode on linux this file should be at `<WORKSPACE PATH>/.vscode/settings.json`
 
 ## Commands
 - `systemverilog.build_index`: Instructs language server to rerun indexing
@@ -81,6 +85,7 @@ NOTE: This has been tested with npm version 6.14.11
 - Language server doesn't understand most verification specific concepts (e.g. classes).
 
 ## Future
+Rewrite parser to make it much more robust
 
 ## Acknowledgements
 Although most of the code is written from scratch, this [VSCode-SystemVerilog extension](https://github.com/eirikpre/VSCode-SystemVerilog/) was what I started with and developed on.

@@ -10,8 +10,12 @@
     ],
     "version": "0.3.0",
     "author": "Kanad Kanhere",
-    "publisher": "IMC",
+    "publisher": "IMC Trading B.V.",
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/imc-trading/svlangserver.git"
+    },
     "engines": {
         "node": "*",
         "vscode": "^1.42.1"
