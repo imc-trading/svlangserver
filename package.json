@@ -1,0 +1,204 @@
+{
+    "name": "svlangserver",
+    "description": "A language server for systemverilog",
+    "keywords": [
+        "sv",
+        "systemverilog",
+        "verilog",
+        "language",
+        "server"
+    ],
+    "version": "0.3.0",
+    "author": "Kanad Kanhere",
+    "publisher": "IMC",
+    "license": "MIT",
+    "engines": {
+        "node": "*",
+        "vscode": "^1.42.1"
+    },
+    "icon": "resources/icon.png",
+    "categories": [
+        "Programming Languages",
+        "Snippets",
+        "Linters",
+        "Formatters"
+    ],
+    "activationEvents": [
+        "onLanguage:systemverilog",
+        "onLanguage:verilog",
+        "onLanguage:markdown",
+        "workspaceContains:**/*.{sv,v,svh,vh}"
+    ],
+    "extensionKind": [
+        "workspace"
+    ],
+    "main": "./lib/extension",
+    "contributes": {
+        "languages": [
+            {
+                "id": "systemverilog",
+                "aliases": [
+                    "SystemVerilog",
+                    "systemverilog",
+                    "System Verilog",
+                    "Systemverilog"
+                ],
+                "extensions": [
+                    ".sv",
+                    ".svh"
+                ],
+                "configuration": "./language-configuration.json"
+            },
+            {
+                "id": "verilog",
+                "aliases": [
+                    "Verilog",
+                    "verilog"
+                ],
+                "extensions": [
+                    ".v",
+                    ".vh"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "snippets": [
+            {
+                "language": "systemverilog",
+                "path": "./snippets/systemverilog.json"
+            },
+            {
+                "language": "verilog",
+                "path": "./snippets/systemverilog.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "systemverilog",
+                "scopeName": "source.systemverilog",
+                "path": "./syntaxes/systemverilog.tmLanguage.json"
+            },
+            {
+                "language": "verilog",
+                "scopeName": "source.systemverilog",
+                "path": "./syntaxes/systemverilog.tmLanguage.json"
+            },
+            {
+                "scopeName": "markdown.verilog.codeblock",
+                "path": "./syntaxes/codeblock.json",
+                "injectTo": [
+                    "text.html.markdown"
+                ],
+                "embeddedLanguages": {
+                    "meta.embedded.block.systemverilog": "source.systemverilog",
+                    "meta.embedded.block.verilog": "source.verilog"
+                }
+            }
+        ],
+        "configuration": [
+            {
+                "title": "SystemVerilog Language Server",
+                "properties": {
+                    "systemverilog.includeIndexing": {
+                        "type": "array",
+                        "default": [
+                            "**/*.{sv,svh,v,vh}"
+                        ],
+                        "description": "Files included for indexing (glob pattern)."
+                    },
+                    "systemverilog.excludeIndexing": {
+                        "type": "array",
+                        "default": [],
+                        "description": "Files excluded for indexing (glob pattern)."
+                    },
+                    "systemverilog.launchConfiguration": {
+                        "type": "string",
+                        "default": "verilator -sv --lint-only --Wall",
+                        "description": "Verilator command used for linting"
+                    },
+                    "systemverilog.defines": {
+                        "type": "array",
+                        "default": [],
+                        "description": "Defines needed for linting."
+                    },
+                    "systemverilog.lintOnUnsaved": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Enable linting on unsaved files"
+                    },
+                    "systemverilog.formatCommand": {
+                        "type": "string",
+                        "default": "verible-verilog-format",
+                        "description": "Verible verilog format command"
+                    }
+                }
+            }
+        ],
+        "commands": [
+            {
+                "command": "systemverilog.build_index",
+                "title": "SystemVerilog: Build index of modules in workspace"
+            }
+        ],
+        "jsonValidation": [
+            {
+                "fileMatch": "tasks.json",
+                "url": "./schemas/tasks.schema.json"
+            }
+        ],
+        "problemMatchers": [
+            {
+                "name": "verilator-error",
+                "owner": "Verilator",
+                "source": "systemverilog",
+                "severity": "error",
+                "fileLocation": "autoDetect",
+                "pattern": [
+                    {
+                        "regexp": "%Error(-[A-Z0-9]+)?: ((\\S+):(\\d+):((\\d+):)? )?(.*)$",
+                        "severity": 1,
+                        "file": 2,
+                        "line": 3,
+                        "column": 4,
+                        "message": 5
+                    }
+                ]
+            },
+            {
+                "name": "verilator-warning",
+                "owner": "Verilator",
+                "source": "systemverilog",
+                "severity": "warning",
+                "fileLocation": "autoDetect",
+                "pattern": [
+                    {
+                        "regexp": "%Warning(-[A-Z0-9]+)?: ((\\S+):(\\d+):((\\d+):)? )?(.*)$",
+                        "severity": 1,
+                        "file": 2,
+                        "line": 3,
+                        "column": 4,
+                        "message": 5
+                    }
+                ]
+            }
+        ]
+    },
+    "dependencies": {
+        "glob": "^7.1.6",
+        "vscode-languageclient": "^6.1.1",
+        "vscode-languageserver": "^6.1.1",
+        "vscode-languageserver-textdocument": "^1.0.1",
+        "vscode-uri": "^2.1.2",
+        "tmp": "^0.2.1"
+    },
+    "devDependencies": {
+        "@types/node": "^12.12.0",
+        "@types/vscode": "^1.52.0",
+        "typescript": "^3.7.5"
+    },
+    "scripts": {
+        "build": "tsc -p .",
+        "prepare": "tsc -p ./src",
+        "watch": "tsc --watch -p ."
+    }
+}
