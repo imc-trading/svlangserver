@@ -1,6 +1,7 @@
 import { TextDocument, Location, Range, Position } from "vscode-languageserver";
 
 import {
+    ConnectionLogger,
     pathToUri,
     uriToPath
 } from './genutils';
@@ -193,7 +194,7 @@ class ContainerStack {
 
     pop() {
         if (this._stack[1].length <= 0) {
-            console.error(`ContainerStack is already empty!`);
+            ConnectionLogger.error(`ContainerStack is already empty!`);
             return;
         }
         this._stack[1].pop();
@@ -319,18 +320,18 @@ export class SystemVerilogParser {
 
         if (symIndex == SystemVerilogParser.ContainerInfoIndex.Symbols) {
             for (let symbol of <SystemVerilogParser.SystemVerilogSymbolsInfo>(containerInfo[SystemVerilogParser.ContainerInfoIndex.Symbols])) {
-                console.log(`DEBUG: symbol "${symbol.name}" of type ${symbol.type}`);
+                ConnectionLogger.log(`DEBUG: symbol "${symbol.name}" of type ${symbol.type}`);
             }
         }
         else if (symIndex == SystemVerilogParser.ContainerInfoIndex.Imports) {
             for (let importItem of <SystemVerilogParser.SystemVerilogImportsInfo>(containerInfo[SystemVerilogParser.ContainerInfoIndex.Imports])) {
-                console.log(`DEBUG: imports from "${importItem[0]}" are ${importItem[1]}`);
+                ConnectionLogger.log(`DEBUG: imports from "${importItem[0]}" are ${importItem[1]}`);
             }
         }
         else if (symIndex == SystemVerilogParser.ContainerInfoIndex.Containers) {
             for (let childContainerInfo of <SystemVerilogParser.SystemVerilogContainersInfo>(containerInfo[SystemVerilogParser.ContainerInfoIndex.Containers])) {
                 let symbol: SystemVerilogSymbol = childContainerInfo[0];
-                console.log(`DEBUG: container symbol "${symbol.name}" of type ${symbol.type}`);
+                ConnectionLogger.log(`DEBUG: container symbol "${symbol.name}" of type ${symbol.type}`);
                 let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[] = childContainerInfo[1];
                 for (let si: number = 0; si < containerSymbolsInfo.length; si++) {
                     this._debugContainerInfo(containerSymbolsInfo, si);
@@ -339,11 +340,11 @@ export class SystemVerilogParser {
         }
         else if (symIndex == SystemVerilogParser.ContainerInfoIndex.Exports) {
             for (let exportItem of <SystemVerilogParser.SystemVerilogExportsInfo>(containerInfo[SystemVerilogParser.ContainerInfoIndex.Exports])) {
-                console.log(`DEBUG: exports from "${exportItem[0]}" are ${exportItem[1]}`);
+                ConnectionLogger.log(`DEBUG: exports from "${exportItem[0]}" are ${exportItem[1]}`);
             }
         }
         else {
-            console.error(`Unsupported SystemVerilogParser.ContainerInfoIndex ${symIndex}`);
+            ConnectionLogger.error(`Unsupported SystemVerilogParser.ContainerInfoIndex ${symIndex}`);
         }
     }
 
@@ -355,7 +356,7 @@ export class SystemVerilogParser {
             }
             for (let containerInfo of <SystemVerilogParser.SystemVerilogContainersInfo>(this._fileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Containers])) {
                 let symbol: SystemVerilogSymbol = containerInfo[0];
-                console.log(`DEBUG: container symbol "${symbol.name}" of type ${symbol.type}`);
+                ConnectionLogger.log(`DEBUG: container symbol "${symbol.name}" of type ${symbol.type}`);
                 let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[] = containerInfo[1];
                 for (let si: number = 0; si < containerSymbolsInfo.length; si++) {
                     this._debugContainerInfo(containerSymbolsInfo, si);
@@ -366,33 +367,33 @@ export class SystemVerilogParser {
             if ((this._fileSymbolsInfo.length <= SystemVerilogParser.FileInfoIndex.Includes) ||
                 (this._fileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Includes] == undefined) ||
                 (this._fileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Includes].length <= 0)) {
-                console.log(`DEBUG: no includes in ${this._documentPath}`);
+                ConnectionLogger.log(`DEBUG: no includes in ${this._documentPath}`);
                 return;
             }
             for (let include of <SystemVerilogParser.SystemVerilogIncludesInfo>(this._fileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Includes])) {
-                console.log(`DEBUG: ${include} included in ${this._documentPath}`);
+                ConnectionLogger.log(`DEBUG: ${include} included in ${this._documentPath}`);
             }
         }
         else if (symIndex == SystemVerilogParser.FileInfoIndex.Imports) {
             if ((this._fileSymbolsInfo.length <= SystemVerilogParser.FileInfoIndex.Imports) ||
                 (this._fileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Imports] == undefined) ||
                 (this._fileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Imports].length <= 0)) {
-                console.log(`DEBUG: no global imports in ${this._documentPath}`);
+                ConnectionLogger.log(`DEBUG: no global imports in ${this._documentPath}`);
                 return;
             }
             for (let importItem of <SystemVerilogParser.SystemVerilogImportsInfo>(this._fileSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Imports])) {
-                console.log(`DEBUG: global imports from "${importItem[0]}" are ${importItem[1]}`);
+                ConnectionLogger.log(`DEBUG: global imports from "${importItem[0]}" are ${importItem[1]}`);
             }
         }
         else if (symIndex == SystemVerilogParser.FileInfoIndex.Exports) {
             if ((this._fileSymbolsInfo.length <= SystemVerilogParser.FileInfoIndex.Exports) ||
                 (this._fileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Exports] == undefined) ||
                 (this._fileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Exports].length <= 0)) {
-                console.log(`DEBUG: no global exports in ${this._documentPath}`);
+                ConnectionLogger.log(`DEBUG: no global exports in ${this._documentPath}`);
                 return;
             }
             for (let exportItem of <SystemVerilogParser.SystemVerilogExportsInfo>(this._fileSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Exports])) {
-                console.log(`DEBUG: global exports from "${exportItem[0]}" are ${exportItem[1]}`);
+                ConnectionLogger.log(`DEBUG: global exports from "${exportItem[0]}" are ${exportItem[1]}`);
             }
         }
         else if (symIndex == SystemVerilogParser.FileInfoIndex.Symbols) {
@@ -401,11 +402,11 @@ export class SystemVerilogParser {
                 return;
             }
             for (let symbol of <SystemVerilogParser.SystemVerilogSymbolsInfo>(this._fileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Symbols])) {
-                console.log(`DEBUG: symbol "${symbol.name}" of type ${symbol.type}`);
+                ConnectionLogger.log(`DEBUG: symbol "${symbol.name}" of type ${symbol.type}`);
             }
         }
         else {
-            console.error(`Unsupported SystemVerilogParser.FileInfoIndex ${symIndex}`);
+            ConnectionLogger.error(`Unsupported SystemVerilogParser.FileInfoIndex ${symIndex}`);
         }
     }
 
@@ -429,7 +430,7 @@ export class SystemVerilogParser {
             if ((tokenOrderIndex < preprocInfo.tokenOrder.length) &&
                 (preprocInfo.tokenOrder[tokenOrderIndex][1] == i)) {
                 if ((tokenText != "") && (parseTokens[currParseToken].text.trim() != "")) {
-                    console.error(`assumption about tokens not split across files might be broken for ${this._documentPath} at ${preprocInfo.tokenOrder[tokenOrderIndex][1]}`);
+                    ConnectionLogger.error(`assumption about tokens not split across files might be broken for ${this._documentPath} at ${preprocInfo.tokenOrder[tokenOrderIndex][1]}`);
                 }
                 tokenOrderFile = preprocInfo.tokenOrder[tokenOrderIndex][0];
                 tokenOrderIndex++;
@@ -447,7 +448,7 @@ export class SystemVerilogParser {
 
             if (tokenText.length >= parseTokens[currParseToken].text.length) {
                 if ((tokenText.length > parseTokens[currParseToken].text.length) || (tokenText != parseTokens[currParseToken].text)) {
-                    console.error(`Assumption made for token re-ranging broken for token "${parseTokens[currParseToken].text}"`);
+                    ConnectionLogger.error(`Assumption made for token re-ranging broken for token "${parseTokens[currParseToken].text}"`);
                 }
                 parseTokens[currParseToken].endTokenIndex = preprocInfo.postTokens[i].endIndex;
                 currParseToken++;
@@ -477,7 +478,7 @@ export class SystemVerilogParser {
     private _getDefLocations(startToken: number, endToken: number): DefinitionLocations {
         let tokenOrderIndex: number = this._getTokenOrderIndex(startToken);
         if (tokenOrderIndex == undefined) {
-            console.error(`Could not figure out the source file for the given range. Falling back to default`);
+            ConnectionLogger.error(`Could not figure out the source file for the given range. Falling back to default`);
             return Range.create(
                 this._document.positionAt(this._svtokens[startToken].startTokenIndex),
                 this._document.positionAt(this._svtokens[endToken].endTokenIndex + 1)
@@ -516,7 +517,7 @@ export class SystemVerilogParser {
         let tokenOrderIndex: number = this._getTokenOrderIndex(symToken);
         let file: string = this._documentPath;
         if (tokenOrderIndex == undefined) {
-            console.error(`Could not figure out the source file for the given range. Falling back to default`);
+            ConnectionLogger.error(`Could not figure out the source file for the given range. Falling back to default`);
         }
         else {
             file = this._tokenOrder[tokenOrderIndex][0];
@@ -537,7 +538,7 @@ export class SystemVerilogParser {
                 document = this._includeCache.get(shortFile)[2];
             }
             else {
-                console.error(`Could not find include cache for ${file}`);
+                ConnectionLogger.error(`Could not find include cache for ${file}`);
                 return undefined;
             }
         }
@@ -596,7 +597,7 @@ export class SystemVerilogParser {
             return;
         }
         let pos: Position = this._document.positionAt(this._svtokens[this._currTokenNum].startTokenIndex);
-        console.log(`DEBUG: Found ${blockId} at ${pos.line}, ${pos.character}`);
+        ConnectionLogger.log(`DEBUG: Found ${blockId} at ${pos.line}, ${pos.character}`);
     }
 
     private _processTypeReference(): string {
@@ -1268,7 +1269,7 @@ export class SystemVerilogParser {
         let scopeDepth: number = this._svtokens[this._currTokenNum].scopes.length - 1;
         this._currTokenNum++;
         for (; this._currTokenNum < this._svtokens.length; this._currTokenNum++) {
-            //console.log(`DEBUG: HERE with scopeDepth=${scopeDepth} with validScopes=[${validScopes.join(',')}] and for token "${this._svtokens[this._currTokenNum].text}" and scopes [${this._svtokens[this._currTokenNum].scopes.join(', ')}]`);
+            //ConnectionLogger.log(`DEBUG: HERE with scopeDepth=${scopeDepth} with validScopes=[${validScopes.join(',')}] and for token "${this._svtokens[this._currTokenNum].text}" and scopes [${this._svtokens[this._currTokenNum].scopes.join(', ')}]`);
             if (validScopes.indexOf(this._getElem(this._svtokens[this._currTokenNum].scopes, scopeDepth)) < 0) {
                 this._currTokenNum--;
                 break;
@@ -2235,7 +2236,7 @@ export class SystemVerilogParser {
 
     private _printParsingFailedMessage() {
         let pos: Position = this._document.positionAt(this._svtokens[this._currTokenNum].startTokenIndex);
-        console.warn(`Parsing failed at token "${this._svtokens[this._currTokenNum].text}" (${pos.line}, ${pos.character}) with scopes [${this._svtokens[this._currTokenNum].scopes.join(",")}] in file ${this._documentPath}`);
+        ConnectionLogger.warn(`Parsing failed at token "${this._svtokens[this._currTokenNum].text}" (${pos.line}, ${pos.character}) with scopes [${this._svtokens[this._currTokenNum].scopes.join(",")}] in file ${this._documentPath}`);
     }
 
     private _processGenerateRegion(): Boolean {
@@ -2601,7 +2602,7 @@ export class SystemVerilogParser {
         if (DEBUG_MODE == 1) {
             let symbols: SystemVerilogSymbol[] = SystemVerilogParser.fileAllSymbols(this._fileSymbolsInfo, false);
             for (let symbol of symbols) {
-                console.log(`DEBUG: found Symbol ${symbol.name} of type ${symbol.type} in document ${this._documentPath}`);
+                ConnectionLogger.log(`DEBUG: found Symbol ${symbol.name} of type ${symbol.type} in document ${this._documentPath}`);
             }
         }
 
@@ -2615,7 +2616,7 @@ export class SystemVerilogParser {
         }
         if (DEBUG_MODE == 1) {
             if (pkgdeps) {
-                console.log(`DEBUG: found pkgdeps ${[...pkgdeps].join(', ')} in document ${this._documentPath}`);
+                ConnectionLogger.log(`DEBUG: found pkgdeps ${[...pkgdeps].join(', ')} in document ${this._documentPath}`);
             }
         }
 
@@ -2624,7 +2625,7 @@ export class SystemVerilogParser {
         //    this._debugFileInfo(si);
         //}
         //for (let cntrInfo of <SystemVerilogParser.SystemVerilogContainersInfo>(this._fileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Containers])) {
-        //    console.log(`DEBUG: Processing ${cntrInfo[0].name} container from ${this._document.uri}`);
+        //    ConnectionLogger.log(`DEBUG: Processing ${cntrInfo[0].name} container from ${this._document.uri}`);
         //    this._debugContainerInfo(cntrInfo[1], SystemVerilogParser.ContainerInfoIndex.Imports);
         //    this._debugContainerInfo(cntrInfo[1], SystemVerilogParser.ContainerInfoIndex.Exports);
         //}

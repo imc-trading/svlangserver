@@ -26,6 +26,10 @@ import {
     GrammarToken,
 } from './grammar_engine';
 
+import {
+    ConnectionLogger
+} from './genutils';
+
 enum ScopeType {
     None,
     InstanceParamsPortsNamed,
@@ -354,7 +358,7 @@ export class SystemVerilogSignatureHelpProvider {
             let routineSymbol: SystemVerilogSymbol;
             let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[];
             [routineFile, routineSymbol, containerSymbolsInfo] = this._indexer.getContainerInfo(document.uri, svtokens[startTokenNum].text);
-            //DBG console.log(`DEBUG: HERE with ${svtoken.text} and ${scopeType} and ${svtokens[startTokenNum].text} and ${routineFile} and ${routineSymbol.name} and ${containerSymbolsInfo == undefined}`);
+            //DBG ConnectionLogger.log(`DEBUG: HERE with ${svtoken.text} and ${scopeType} and ${svtokens[startTokenNum].text} and ${routineFile} and ${routineSymbol.name} and ${containerSymbolsInfo == undefined}`);
             if ((routineFile == undefined) || (routineSymbol == undefined) || (containerSymbolsInfo == undefined)) {
                 return nullSignatureHelp;
             }

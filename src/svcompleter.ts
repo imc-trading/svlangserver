@@ -24,6 +24,10 @@ import {
     GrammarToken,
 } from './grammar_engine';
 
+import {
+    ConnectionLogger
+} from './genutils';
+
 const sv_completion_systemtask: string[][] = [
     // Messaging
     ["display"       ,"$display()",        "display(\"$0\",);"           ],
@@ -386,7 +390,7 @@ export class SystemVerilogCompleter {
     private _getInstanceCompletions(svtokens: GrammarToken[], svtokennum: number): CompletionItem[] {
         let instInfo: {tokenNum: number, portType: string} = this._getHierInstType(svtokens, svtokennum);
         if (instInfo.tokenNum >= 0) {
-            //console.log(`DEBUG: Instantiating module - ${svtokens[instInfo.tokenNum].text} port list type ${instInfo.portType}`);
+            //ConnectionLogger.log(`DEBUG: Instantiating module - ${svtokens[instInfo.tokenNum].text} port list type ${instInfo.portType}`);
             if (instInfo.portType == "param") {
                 return this._stringlistToCompletionItems(this._indexer.getInstParams(svtokens[instInfo.tokenNum].text).map(sym => sym.name), CompletionItemKind.Text, "inst.params.systemverilog");
             }
@@ -394,12 +398,12 @@ export class SystemVerilogCompleter {
                 return this._stringlistToCompletionItems(this._indexer.getInstPorts(svtokens[instInfo.tokenNum].text).map(sym => sym.name), CompletionItemKind.Text, "inst.params.systemverilog");
             }
             else {
-                console.error(`Invalid port type ${instInfo.portType} returned`);
+                ConnectionLogger.error(`Invalid port type ${instInfo.portType} returned`);
                 return [];
             }
         }
         else {
-            console.warn(`Unable to find module instantiation at - ${svtokennum}`);
+            ConnectionLogger.warn(`Unable to find module instantiation at - ${svtokennum}`);
             return [];
         }
     }

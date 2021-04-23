@@ -39,6 +39,7 @@ import {
 } from './svcompletion_grammar';
 
 import {
+    ConnectionLogger,
     fsWriteFile,
     fsWriteFileSync,
     isStringListEqual,
@@ -71,7 +72,7 @@ type Containers = {pkgs: string[], modules: string[], interfaces: string[]};
 export class SystemVerilogIndexer {
     private _rootPath: string | null;
     private _clientDir: string | null;
-    private _srcFiles: string[] = [];
+    private _srcFiles: string[];
     private _preprocCache: Map<string, [string, PreprocIncInfo, TextDocument]> = new Map();
     private _indexedFilesInfo: Map<string, IndexFileInfo> = new Map();
     private _pkgToFiles: Map<string, Set<string>> = new Map();
@@ -151,14 +152,14 @@ export class SystemVerilogIndexer {
                 this._waitForHalt().then(() => {
                     this.index(includes, excludes);
                 }).catch((err) => {
-                    console.error(err);
+                    ConnectionLogger.error(err);
                 });
                 return;
             }
             else if (this._indexProgress == IndexProgressType.Ongoing) {
                 _indexGlob((err, files) => {
                     if (err) {
-                        console.error(err);
+                        ConnectionLogger.error(err);
                     }
                     else if (files.length > 0) {
                         if (!isStringListEqual(files, this._srcFiles)) {
@@ -166,12 +167,12 @@ export class SystemVerilogIndexer {
                             this._waitForHalt().then(() => {
                                 _index(files);
                             }).catch((err) => {
-                                console.error(err);
+                                ConnectionLogger.error(err);
                             });
                         }
                     }
                     else {
-                        console.log("No files to index");
+                        ConnectionLogger.log("No files to index");
                     }
                 });
                 return;
@@ -186,7 +187,7 @@ export class SystemVerilogIndexer {
 
                 if (err) {
                     this._indexProgress = IndexProgressType.Done;
-                    console.error(err);
+                    ConnectionLogger.error(err);
                     this._srcFiles = [];
                 }
                 else if (files.length > 0) {
@@ -194,7 +195,7 @@ export class SystemVerilogIndexer {
                 }
                 else {
                     this._indexProgress = IndexProgressType.Done;
-                    console.log("No files to index");
+                    ConnectionLogger.log("No files to index");
                     this._srcFiles = [];
                 }
             });
@@ -224,7 +225,7 @@ export class SystemVerilogIndexer {
                     cacheFileCount++;
                 }
             }
-            console.log(`INFO: Loaded cached index for ${cacheFileCount} files`);
+            ConnectionLogger.log(`INFO: Loaded cached index for ${cacheFileCount} files`);
             forkedCachedIndexLoader.send('done');
             this._cacheLoadingDone = true;
         });
@@ -235,7 +236,7 @@ export class SystemVerilogIndexer {
         if (!this._srcFiles) {
             return;
         }
-        console.log(`INFO: Indexing ${this._srcFiles.length} files ...`);
+        ConnectionLogger.log(`INFO: Indexing ${this._srcFiles.length} files ...`);
         var startTime = performance.now();
         const forkedIndexBuilder = fork(resolvedPath('./svindex_builder.js'));
         let offset: number = 0;
@@ -252,17 +253,17 @@ export class SystemVerilogIndexer {
                     this._preprocCache.set(k, v);
                     this._indexedFilesInfo.set(v[0], {symbolsInfo: SystemVerilogParser.preprocToFileSymbolsInfo(v[1].symbols, v[1].includes), pkgdeps: null, rank: 0});
                 }
-                console.log(`INFO: Done indexing ${this._srcFiles.length + this._preprocCache.size} files!!!`);
+                ConnectionLogger.log(`INFO: Done indexing ${this._srcFiles.length + this._preprocCache.size} files!!!`);
                 this._indexProgress = IndexProgressType.Done;
                 var endTime = performance.now();
-                console.log(`INFO: Took ${endTime - startTime} milliseconds`);
+                ConnectionLogger.log(`INFO: Took ${endTime - startTime} milliseconds`);
                 forkedIndexBuilder.send(['exit', '']);
                 this._updatePkgFilesInfo();
                 this.saveIndex();
                 this._generateVerilatorOptionsFile();
             }
             else {
-                //DBG console.log(`DEBUG: Received ${jsonFileSymbolsInfo.length} symbols and ${pkgdeps.length} pkgdeps for ${this._srcFiles[offset]}`);
+                //DBG ConnectionLogger.log(`DEBUG: Received ${jsonFileSymbolsInfo.length} symbols and ${pkgdeps.length} pkgdeps for ${this._srcFiles[offset]}`);
                 let symbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo[] = SystemVerilogParser.jsonToFileSymbolsInfo(pathToUri(this._srcFiles[offset]), jsonFileSymbolsInfo);
                 if (this._indexedFilesInfo.has(this._srcFiles[offset])) {
                     this._incrementalUpdateFileInfo(this._srcFiles[offset], symbolsInfo, pkgdeps);
@@ -361,14 +362,14 @@ export class SystemVerilogIndexer {
     private _incDepsRank(file: string, visitedFiles: string[], fileDepsInfo: Map<string, Set<string>>, indent: number = 0): void {
         for (let fileDep of fileDepsInfo.get(file)) {
             if (visitedFiles.indexOf(fileDep) >= 0) {
-                console.error(`ERROR: Found cycle in ${visitedFiles}`);
+                ConnectionLogger.error(`ERROR: Found cycle in ${visitedFiles}`);
                 return;
             }
             let fileDepInfo = this._indexedFilesInfo.get(fileDep);
             let fileInfo = this._indexedFilesInfo.get(file);
             if (fileDepInfo.rank <= fileInfo.rank) {
                 fileDepInfo.rank = fileInfo.rank + 1;
-                //console.log(`${' '.repeat(indent)} DEBUG: incrementing rank of ${fileDep} because of ${file}`);
+                //ConnectionLogger.log(`${' '.repeat(indent)} DEBUG: incrementing rank of ${fileDep} because of ${file}`);
                 this._incDepsRank(fileDep, [fileDep].concat(visitedFiles), fileDepsInfo, indent + 1);
             }
         }
@@ -398,7 +399,7 @@ export class SystemVerilogIndexer {
                 setTimeout(this.indexOpenDocument.bind(this, document, retryCount + 1), RETRY_DELAY_MS);
             }
             else {
-                console.error(`Timeout trying to index document ${document.uri}`);
+                ConnectionLogger.error(`Timeout trying to index document ${document.uri}`);
             }
             return;
         }
@@ -575,7 +576,7 @@ export class SystemVerilogIndexer {
                     return this.getDocumentSymbols(document, retryCount + 1);
                 }
                 else {
-                    console.error(`Timeout trying to get document symbols for ${document.uri}`);
+                    ConnectionLogger.error(`Timeout trying to get document symbols for ${document.uri}`);
                 }
                 return [];
             });
@@ -620,7 +621,7 @@ export class SystemVerilogIndexer {
     getWorkspaceSystemVerilogSymbols(query: string): Promise<SystemVerilogSymbol[]> {
         return new Promise((resolve, reject) => {
             if (query==undefined || query.length === 0) {
-                console.error(`getWorkspaceSystemVerilogSymbols does not accept empty/undefined query`);
+                ConnectionLogger.error(`getWorkspaceSystemVerilogSymbols does not accept empty/undefined query`);
                 resolve([]);
             }
             else {
@@ -758,12 +759,12 @@ export class SystemVerilogIndexer {
             const offset: number = document.offsetAt(Position.create(line, character - 1)); 
             let firstToken: number = 0;
             let lastToken: number = svtokens.length - 1;
-            //console.log(`DEBUG: Trying to find token at ${offset} with ${firstToken}:${svtokens[firstToken].index} - ${lastToken}:${svtokens[lastToken].index + svtokens[lastToken].text.length}`);
+            //ConnectionLogger.log(`DEBUG: Trying to find token at ${offset} with ${firstToken}:${svtokens[firstToken].index} - ${lastToken}:${svtokens[lastToken].index + svtokens[lastToken].text.length}`);
             while ((offset >= svtokens[firstToken].index) && (offset < (svtokens[lastToken].index + svtokens[lastToken].text.length))) {
                 let prevFirstToken = firstToken;
                 let prevLastToken = lastToken;
                 let midToken = ~~((firstToken + lastToken)/2);
-                //console.log(`DEBUG: Trying ${midToken} at ${svtokens[midToken].index} - ${svtokens[midToken].index + svtokens[midToken].text.length}`);
+                //ConnectionLogger.log(`DEBUG: Trying ${midToken} at ${svtokens[midToken].index} - ${svtokens[midToken].index + svtokens[midToken].text.length}`);
                 if (offset < svtokens[midToken].index) {
                     lastToken = midToken;
                 }
@@ -771,13 +772,13 @@ export class SystemVerilogIndexer {
                     firstToken = midToken;
                 }
                 else {
-                    //console.log(`DEBUG: Found ${midToken} at ${svtokens[midToken].index} with text "${svtokens[midToken].text}"`);
+                    //ConnectionLogger.log(`DEBUG: Found ${midToken} at ${svtokens[midToken].index} with text "${svtokens[midToken].text}"`);
                     svtokennum = midToken;
                     break;
                 }
 
                 if ((prevFirstToken == firstToken) && (prevLastToken == lastToken)) {
-                    console.error(`Tokenization might be incorrect as token search ran into infinite loop at ${firstToken} - ${lastToken}`);
+                    ConnectionLogger.error(`Tokenization might be incorrect as token search ran into infinite loop at ${firstToken} - ${lastToken}`);
                     break;
                 }
             }
@@ -787,7 +788,7 @@ export class SystemVerilogIndexer {
             //for (let i = 0; i < svtokens.length; i++) {
             //    const token = svtokens[i];
             //    const text = svtokens[i].text;
-            //    console.log(` - token ${i} at ${token.index} (${text}) with scopes ${token.scopes.join(', ')}`
+            //    ConnectionLogger.log(` - token ${i} at ${token.index} (${text}) with scopes ${token.scopes.join(', ')}`
             //    );
             //}
         }

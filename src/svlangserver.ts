@@ -50,6 +50,7 @@ import {
 } from './svformatter';
 
 import {
+    ConnectionLogger,
     fsReadFile,
     isStringListEqual,
     uriToPath
@@ -64,6 +65,7 @@ const BuildIndexCommand = "systemverilog.build_index"
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
 let connection = createConnection(ProposedFeatures.all);
+ConnectionLogger.setConnection(connection);
 
 // client capabilities
 let clientName: string;
@@ -84,11 +86,20 @@ connection.onInitialize((params: InitializeParams) => {
     clientName = !!params.clientInfo ? params.clientInfo.name : undefined;
 
     svindexer.setRoot(uriToPath(params.rootUri));
-    if (clientName  == "vscode") {
+    if (clientName.startsWith("vscode")) {
         svindexer.setClientDir(".vscode");
     }
-    else {
+    else if (clientName.startsWith("coc.nvim")) {
         svindexer.setClientDir(".vim");
+    }
+    else if (clientName.startsWith("Sublime")) {
+        svindexer.setClientDir(".sublime");
+    }
+    else if (clientName.startsWith("emacs")) {
+        svindexer.setClientDir(".emacs");
+    }
+    else {
+        svindexer.setClientDir(".svlangserver");
     }
     verilator.setOptionsFile(svindexer.getVerilatorOptionsFile());
 
@@ -105,7 +116,7 @@ connection.onInitialize((params: InitializeParams) => {
             hoverProvider: true,
             signatureHelpProvider: {
 				triggerCharacters: [ '(', '[', ',' ],
-                retriggerCharacters: [ ',' ] //TBD Not supported in Coc!
+                retriggerCharacters: [ ',' ] //TBD Not supported in CoC!
 			},
             executeCommandProvider: {
                 commands: [
@@ -125,21 +136,21 @@ function getSettings() : Promise<Object> {
         settings.forEach((val, prop) => { initSettings[prop] = val; });
         return Promise.resolve({settings: initSettings});
     }
-    else if (clientName == "vscode") {
-        return connection.workspace.getConfiguration({section: 'systemverilog'}).then(svSettings => {
+    else if (clientName == "coc.nvim") {
+        return connection.workspace.getConfiguration().then(svSettings => {
             let initSettings: Object = new Object();
             settings.forEach((val, prop) => {
-                let nprop: string = prop.substring("systemverilog.".length);
-                initSettings[prop] = !!svSettings[nprop] ? svSettings[nprop] : settings[prop];
+                initSettings[prop] = svSettings[prop] == undefined ? settings[prop] : svSettings[prop];
             });
             return {settings: initSettings};
         });
     }
     else {
-        return connection.workspace.getConfiguration().then(svSettings => {
+        return connection.workspace.getConfiguration({section: 'systemverilog'}).then(svSettings => {
             let initSettings: Object = new Object();
             settings.forEach((val, prop) => {
-                initSettings[prop] = !!svSettings[prop] ? svSettings[prop] : settings[prop];
+                let nprop: string = prop.substring("systemverilog.".length);
+                initSettings[prop] = svSettings[nprop] == undefined ? settings[prop] : svSettings[nprop];
             });
             return {settings: initSettings};
         });
@@ -150,10 +161,23 @@ function updateSettings(change, forceUpdate: Boolean = false) {
     let oldSettings: Map<string, any> = new Map<string, any>();
     for (let [prop, val] of settings.entries()) {
         oldSettings.set(prop, val);
-        settings.set(prop, change.settings[prop] == undefined ? val : change.settings[prop]);
+        if (change.settings[prop] == undefined) {
+            let hierParts: string[] = prop.split(".");
+            let newVal = change.settings;
+            for (let i: number = 0; i < hierParts.length; i++) {
+                newVal = newVal[hierParts[i]];
+                if (newVal == undefined) {
+                    break;
+                }
+            }
+            settings.set(prop, newVal == undefined ? val : newVal);
+        }
+        else {
+            settings.set(prop, change.settings[prop]);
+        }
     }
     for (let [prop, val] of settings.entries()) {
-        console.log(`INFO: settings[${prop}] = ${settings.get(prop)}`);
+        ConnectionLogger.log(`INFO: settings[${prop}] = ${settings.get(prop)}`);
     }
 
     let definesChanged: Boolean = forceUpdate || !isStringListEqual(oldSettings.get("systemverilog.defines"), settings.get("systemverilog.defines"))
@@ -196,24 +220,18 @@ documents.onDidChangeContent(change => {
 // This handler provides the initial list of the completion items.
 connection.onCompletion(
     (_textDocumentPosition: TextDocumentPositionParams): CompletionItem[] => {
-        if (!isValidExtension(_textDocumentPosition.textDocument.uri)) {
+        if (settings.get("systemverilog.disableCompletionProvider")) {
+            return [];
+        }
+        else if (!isValidExtension(_textDocumentPosition.textDocument.uri)) {
             return [];
         }
         return svcompleter.completionItems(documents.get(_textDocumentPosition.textDocument.uri), _textDocumentPosition.position);
     }
 );
 
-// This handler resolves additional information for the item selected in
-// the completion list.
 connection.onCompletionResolve(
     (item: CompletionItem): CompletionItem => {
-        if (item.data === 1) {
-            item.detail = 'TypeScript details';
-            item.documentation = 'TypeScript documentation';
-        } else if (item.data === 2) {
-            item.detail = 'JavaScript details';
-            item.documentation = 'JavaScript documentation';
-        }
         return item;
     }
 );
@@ -237,7 +255,10 @@ connection.onDefinition((textDocumentPosition: TextDocumentPositionParams): Prom
 });
 
 connection.onHover((hoverParams: HoverParams): Promise<Hover> => {
-    if (!isValidExtension(hoverParams.textDocument.uri)) {
+    if (settings.get("systemverilog.disableHoverProvider")) {
+        return undefined;
+    }
+    else if (!isValidExtension(hoverParams.textDocument.uri)) {
         return undefined;
     }
 
@@ -255,6 +276,9 @@ connection.onHover((hoverParams: HoverParams): Promise<Hover> => {
 });
 
 function lintDocument(uri: string, text?: string) {
+    if (settings.get("systemverilog.disableLinting")) {
+        return;
+    }
     verilator.lint(uriToPath(uri), text)
         .then((diagnostics) => {
             connection.sendDiagnostics({ uri: uri, diagnostics });
@@ -279,6 +303,9 @@ documents.onDidSave((event) => {
 });
 
 connection.onSignatureHelp((textDocumentPosition: TextDocumentPositionParams): SignatureHelp => {
+    if (settings.get("systemverilog.disableSignatureHelpProvider")) {
+        return undefined;
+    }
     return svsignhelper.getSignatures(documents.get(textDocumentPosition.textDocument.uri), textDocumentPosition.position.line, textDocumentPosition.position.character);
 });
 
@@ -287,7 +314,7 @@ connection.onExecuteCommand((commandParams) => {
         svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.excludeIndexing"));
     }
     else {
-        console.error(`Unhandled command ${commandParams.command}`);
+        ConnectionLogger.error(`Unhandled command ${commandParams.command}`);
     }
 });
 

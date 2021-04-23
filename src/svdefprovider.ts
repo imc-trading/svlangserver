@@ -23,6 +23,10 @@ import {
     GrammarToken
 } from './grammar_engine';
 
+import {
+    ConnectionLogger
+} from './genutils';
+
 export class SystemVerilogDefinitionProvider {
     private _indexer: SystemVerilogIndexer;
 
@@ -108,7 +112,7 @@ export class SystemVerilogDefinitionProvider {
             if (includeUserDefines) {
                 let userDefineNum: number = this._indexer.findUserDefine(defText);
                 if (userDefineNum >= 0) {
-                    //DBG console.log(`DEBUG: HERE with ${userDefineNum} for ${defText}`);
+                    //DBG ConnectionLogger.log(`DEBUG: HERE with ${userDefineNum} for ${defText}`);
                     return ["", userDefineNum];
                 }
             }

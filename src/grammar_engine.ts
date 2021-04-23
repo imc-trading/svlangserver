@@ -1,3 +1,7 @@
+import {
+    ConnectionLogger
+} from './genutils';
+
 enum TokenRegExpPatternActionType {
     None,
     Push,
@@ -121,7 +125,7 @@ function getContextPatterns(contexts: Context[]): Map<Context, TokenRegExpPatter
                 patterns = patterns.concat(sresult.get(pattern));
             }
             else {
-                console.error("Unsupported pattern");
+                ConnectionLogger.error("Unsupported pattern");
             }
         }
         result.set(context, patterns);
@@ -164,7 +168,7 @@ function loadGrammar(grammar): Map<string, Context> | null {
                     let actionContext: Context;
                     if (typeof pattern.push === "string" || pattern.push instanceof String) {
                         if (!contexts.has(pattern.push)) {
-                            console.error(`${pattern.push} is not a valid context`);
+                            ConnectionLogger.error(`${pattern.push} is not a valid context`);
                             return null;
                         }
                         actionContext = contexts.get(pattern.push);
@@ -184,7 +188,7 @@ function loadGrammar(grammar): Map<string, Context> | null {
                     if (typeof pattern.pop === "string" || pattern.pop instanceof String) {
                         if (pattern.pop) {
                             if (!contexts.has(pattern.pop)) {
-                                console.error(`${pattern.pop} is not a valid context`);
+                                ConnectionLogger.error(`${pattern.pop} is not a valid context`);
                                 return null;
                             }
                             actionContext = contexts.get(pattern.pop);
@@ -212,13 +216,13 @@ function loadGrammar(grammar): Map<string, Context> | null {
             }
             else if (pattern.include != undefined) {
                 if (!contexts.has(pattern.include)) {
-                    console.error(`${pattern.include} is not a valid context`);
+                    ConnectionLogger.error(`${pattern.include} is not a valid context`);
                     return null;
                 }
                 contexts.get(contextName).include([contexts.get(pattern.include)]);
             }
             else {
-                console.error("Invalid grammar pattern found");
+                ConnectionLogger.error("Invalid grammar pattern found");
                 return null;
             }
         }
@@ -259,11 +263,11 @@ export class GrammarEngine {
                 let match = pattern.regExp.exec(text);
                 if (match) {
                     if (match[0].length == 0) {
-                        console.error(`Empty length pattern found. Pattern - ${pattern.regExp}`);
+                        ConnectionLogger.error(`Empty length pattern found. Pattern - ${pattern.regExp}`);
                         return [];
                     }
                     else if (pattern.tokenNames.length + 1 != match.length) {
-                        console.error(`Pattern token-names length different than captures. Pattern - ${pattern.regExp}, token-name=${pattern.tokenNames.join(", ")}`);
+                        ConnectionLogger.error(`Pattern token-names length different than captures. Pattern - ${pattern.regExp}, token-name=${pattern.tokenNames.join(", ")}`);
                         return [];
                     }
 
@@ -274,7 +278,7 @@ export class GrammarEngine {
                         }
                     }
                     if (offset != match[0].length) {
-                        console.error(`captures don't add up. Complete match - ${match[0]}, captures - "${match.slice(1).join('" ')}"`);
+                        ConnectionLogger.error(`captures don't add up. Complete match - ${match[0]}, captures - "${match.slice(1).join('" ')}"`);
                         return [];
                     }
 

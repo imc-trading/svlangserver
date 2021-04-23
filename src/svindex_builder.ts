@@ -16,6 +16,7 @@ import {
 } from './svparser';
 
 import {
+    ConnectionLogger,
     fsReadFile,
     pathToUri
 } from './genutils';
@@ -48,7 +49,7 @@ process.on('message', (args) => {
             let pkgdeps: string[];
             [fileSymbolsInfo, pkgdeps] = _parser.parse(document, _includeFilePaths, _includeCache, _userDefinesMacroInfo, "full");
             //DBG let symbols: SystemVerilogSymbol[] = SystemVerilogParser.fileAllSymbols(fileSymbolsInfo, false);
-            //DBG console.log(`DEBUG: Sending ${symbols.length} symbols and ${pkgdeps.length} pkgdeps for ${file}`);
+            //DBG ConnectionLogger.log(`DEBUG: Sending ${symbols.length} symbols and ${pkgdeps.length} pkgdeps for ${file}`);
             process.send([fileSymbolsInfo, pkgdeps]);
         })
         .catch((err) => {

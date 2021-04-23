@@ -4,7 +4,11 @@ export let default_settings: Map<string, any> = new Map<string, any>([
     ["systemverilog.launchConfiguration", 'verilator -sv --lint-only --Wall'],
     ["systemverilog.defines", []],
     ["systemverilog.lintOnUnsaved", true],
-    ["systemverilog.formatCommand", "verible-verilog-format"]
+    ["systemverilog.formatCommand", "verible-verilog-format"],
+    ["systemverilog.disableCompletionProvider", false],
+    ["systemverilog.disableHoverProvider", false],
+    ["systemverilog.disableSignatureHelpProvider", false],
+    ["systemverilog.disableLinting", false]
 ]);
 
 export namespace SystemVerilogUtils {

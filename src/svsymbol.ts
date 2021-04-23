@@ -8,6 +8,7 @@ import {
 } from "vscode-languageserver";
 
 import {
+    ConnectionLogger,
     fsReadFileSync,
     uriToPath
 } from './genutils';
@@ -138,7 +139,7 @@ export class SystemVerilogSymbol {
         let symURI: string = uri;
         if (typeof this.symLocation === "number") {
             if (!Array.isArray(this.defLocations)) {
-                console.error(`Invalid symbol location (number) when defLocations is not an array`);
+                ConnectionLogger.error(`Invalid symbol location (number) when defLocations is not an array`);
             }
             let l: number = 0;
             for (let i = 0; i < (<Array<string|Range>>(this.defLocations)).length; i++) {

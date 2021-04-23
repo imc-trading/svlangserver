@@ -1,4 +1,9 @@
 import {
+    LogMessageNotification,
+    MessageType
+} from 'vscode-languageserver';
+
+import {
     URI
 } from 'vscode-uri';
 
@@ -72,4 +77,32 @@ export function isStringListEqual(stringList1: string[], stringList2: string[]):
     }
 
     return true;
+}
+
+export class ConnectionLogger {
+    private static _connection = null;
+
+    private static sendNotification(type: MessageType, message: string) {
+        if (!ConnectionLogger._connection) {
+            return;
+        }
+        ConnectionLogger._connection.sendNotification(LogMessageNotification.type, {type: type, message: message});
+    }
+
+    public static setConnection(connection)
+    {
+        ConnectionLogger._connection = connection;
+    }
+
+    public static log(message: string) {
+        ConnectionLogger.sendNotification(MessageType.Log, message);
+    }
+
+    public static warn(message: string) {
+        ConnectionLogger.sendNotification(MessageType.Warning, message);
+    }
+
+    public static error(message: string) {
+        ConnectionLogger.sendNotification(MessageType.Error, message);
+    }
 }

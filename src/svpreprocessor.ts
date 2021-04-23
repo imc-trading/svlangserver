@@ -1,6 +1,7 @@
 import { TextDocument, Location, Range, Position } from "vscode-languageserver";
 
 import {
+    ConnectionLogger,
     fsReadFileSync,
     pathToUri,
     uriToPath
@@ -72,7 +73,7 @@ class PreprocTokenManager {
 
     public prevToken(tokenMarker?: TokenMarker) {
         if (this._currTokenNum == 0) {
-            console.error(`cannot go before first token`);
+            ConnectionLogger.error(`cannot go before first token`);
         }
         else if (tokenMarker != undefined) {
             this._currTokenNum = tokenMarker;
@@ -176,7 +177,7 @@ export class SystemVerilogPreprocessor {
             return;
         }
         let pos: Position = this._document.positionAt(this._tokenManager.getCurrToken().index);
-        console.log(`DEBUG: Found ${blockId} at ${pos.line}, ${pos.character}`);
+        ConnectionLogger.log(`DEBUG: Found ${blockId} at ${pos.line}, ${pos.character}`);
     }
 
     private _pushEmptyPostToken(startTokenMarker?: number) {
@@ -654,7 +655,7 @@ export class SystemVerilogPreprocessor {
                             this._includeCache.set(fileName, [includeFilePath, preprocIncInfo, document]);
                         }
                         catch (err) {
-                            console.warn(`Could not process include file ${includeFilePath} - ${err}`);
+                            ConnectionLogger.warn(`Could not process include file ${includeFilePath} - ${err}`);
                             preprocIncInfo = { symbols: [], postTokens: [], tokenOrder: [], macroChanges: [], macroChangeOrder: [], includes: new Set() };
                         }
                     }
@@ -662,7 +663,7 @@ export class SystemVerilogPreprocessor {
                     this._preprocIncInfo.includes.add(includeFilePath);
                 }
                 else {
-                    console.warn(`Could not find include file ${fileName}`);
+                    ConnectionLogger.warn(`Could not find include file ${fileName}`);
                     preprocIncInfo = { symbols: [], postTokens: [], tokenOrder: [], macroChanges: [], macroChangeOrder: [], includes: new Set() };
                 }
             }
@@ -819,7 +820,7 @@ export class SystemVerilogPreprocessor {
         this._tokenManager = new PreprocTokenManager(SystemVerilogPreprocessor.tokenize(preText));
 
         if (this._fileList.has(this._filePath)) {
-            console.error(`include loop found`);
+            ConnectionLogger.error(`include loop found`);
             return undefined;
         }
         else {
@@ -843,7 +844,7 @@ export class SystemVerilogPreprocessor {
             }
             else {
                 if (this._tokenManager.getCurrToken().text.startsWith("`")) {
-                    console.error(`Parsing failed for token ${this._tokenManager.getCurrToken().text} in file ${this._filePath}`);
+                    ConnectionLogger.error(`Parsing failed for token ${this._tokenManager.getCurrToken().text} in file ${this._filePath}`);
                 }
                 this._preprocIncInfo.postTokens.push(this._tokenManager.getCurrPostToken());
             }
@@ -858,17 +859,17 @@ export class SystemVerilogPreprocessor {
         if (DEBUG_MODE == 2) {
             let postText: string = "";
             for (let token of this._getAllPostTokens(this._filePath, this._preprocIncInfo.postTokens, this._preprocIncInfo.tokenOrder)[0]) {
-                //console.log(`DEBUG: token "${token.text}" at ${token.index} - ${token.endIndex}`);
+                //ConnectionLogger.log(`DEBUG: token "${token.text}" at ${token.index} - ${token.endIndex}`);
                 postText += token.text;
             }
-            console.log(`DEBUG: New text (${preText.length}, ${postText.length})`);
-            console.log(`${postText}`);
+            ConnectionLogger.log(`DEBUG: New text (${preText.length}, ${postText.length})`);
+            ConnectionLogger.log(`${postText}`);
 
             for (let macro of this._macroInfo) {
-                console.log(`DEBUG: macro=${macro[0]}`);
+                ConnectionLogger.log(`DEBUG: macro=${macro[0]}`);
                 if (macro[1].args != undefined) {
                     if (macro[1].args.size == 0) {
-                        console.log(`    function with no args`);
+                        ConnectionLogger.log(`    function with no args`);
                     }
                     else {
                         let args: string[] = Array.from(macro[1].args).sort((n1, n2) => { return n1[1] - n2[1]; }).map(arg => arg[0]);
@@ -886,23 +887,23 @@ export class SystemVerilogPreprocessor {
                                     defValue += token.text;
                                 }
                             }
-                            console.log(`    arg=${args[i]}, default=${defValue}`);
+                            ConnectionLogger.log(`    arg=${args[i]}, default=${defValue}`);
                         }
                     }
                 }
                 else {
-                    console.log(`    not a function`);
+                    ConnectionLogger.log(`    not a function`);
                 }
 
                 if (macro[1].definition.length == 0) {
-                    console.log(`    empty replacement text`);
+                    ConnectionLogger.log(`    empty replacement text`);
                 }
                 else {
                     let defText: string = "";
                     for (let token of macro[1].definition) {
                         defText += token.text;
                     }
-                    console.log(`    - ${defText}`);
+                    ConnectionLogger.log(`    - ${defText}`);
                 }
             }
         }

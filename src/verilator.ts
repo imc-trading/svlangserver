@@ -6,6 +6,7 @@ import {
 } from "vscode-languageserver";
 
 import {
+    ConnectionLogger,
     fsWriteFileSync,
     fsUnlinkSync,
     getTmpFileSync
@@ -54,7 +55,7 @@ export class VerilatorDiagnostics {
         };
 
         if (this._alreadyRunning.has(file)) {
-            //console.log(`DEBUG: Killing already running command to start a new one`);
+            //ConnectionLogger.log(`DEBUG: Killing already running command to start a new one`);
             _kill();
         }
         return new Promise((resolve) => {
@@ -64,7 +65,7 @@ export class VerilatorDiagnostics {
 
                 // if file write takes too long and another process started in the interim
                 if (this._alreadyRunning.has(file)) {
-                    //console.log(`DEBUG: Killing already running command to start a new one`);
+                    //ConnectionLogger.log(`DEBUG: Killing already running command to start a new one`);
                     _kill();
                 }
             }
@@ -72,7 +73,7 @@ export class VerilatorDiagnostics {
             let defineArgs: string = this._defines.length > 0 ? this._defines.map(d => ` +define+${d}`).join('') : "";
             let command: string = this._command + defineArgs +  (this._optionsFile ? ' -f ' + this._optionsFile : "") + " " + actFile;
             let statusRef: [Boolean] = [true];
-            //console.log(`DEBUG: verilator command ${command}`);
+            //ConnectionLogger.log(`DEBUG: verilator command ${command}`);
             this._alreadyRunning.set(file, [
                 child.exec(command, (error, stdout, stderr) => {
                     if (text != undefined) {
@@ -127,6 +128,9 @@ export class VerilatorDiagnostics {
                 if (line.search("Unsupported: Interfaced port on top level module") > 0) {
                     return;
                 }
+                else if (line.search(/Filename .* does not match MODULE name/) > 0) {
+                    return;
+                }
 
                 // was it for a submodule
                 if (line.search(file) > 0) {
@@ -140,7 +144,7 @@ export class VerilatorDiagnostics {
                     let lineNum = parseInt(terms[1].trim()) - 1;
 
                     if (lineNum != NaN) {
-                        //console.log(terms[1].trim() + ' ' + message);
+                        //ConnectionLogger.log(terms[1].trim() + ' ' + message);
 
                         diagnostics.push({
                             severity: severity,
