@@ -1,0 +1,13 @@
+.git/
+lib/
+node_modules/
+src/
+bin/
+.gitignore
+.vscodeignore
+package-lock.json
+tsconfig.json
+*.el
+**/*.swp
+dist/**/*.map
+dist/**/*.LICENSE.txt

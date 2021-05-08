@@ -26,7 +26,7 @@ function getSettings(client) {
 }
 
 export function activate(context: ExtensionContext) {
-    let serverModule = context.asAbsolutePath(path.join('lib', 'svlangserver.js'));
+    let serverModule = context.asAbsolutePath(path.join('dist', 'svlangserver.js'));
 
     let serverOptions: ServerOptions = {
         run: {module: serverModule, transport: TransportKind.ipc},

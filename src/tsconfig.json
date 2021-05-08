@@ -1,9 +1,11 @@
 {
+	"exclude": ["./extension.ts"],
 	"compilerOptions": {
 		"target": "es2019",
 		"module": "commonjs",
 		"moduleResolution": "node",
 		"sourceMap": false,
+		"declaration": true,
 		"lib" : [ "es2019" ],
 		"outDir": "../lib"
 	}

@@ -1,5 +1,5 @@
 {
-    "name": "svlangserver",
+    "name": "@imc-trading/svlangserver",
     "description": "A language server for systemverilog",
     "keywords": [
         "sv",
@@ -8,9 +8,9 @@
         "language",
         "server"
     ],
-    "version": "0.3.1",
+    "version": "0.3.3",
     "author": "Kanad Kanhere",
-    "publisher": "IMC Trading B.V.",
+    "publisher": "IMCTradingBV",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -18,7 +18,7 @@
     },
     "engines": {
         "node": "*",
-        "vscode": "^1.42.1"
+        "vscode": "^1.52.0"
     },
     "icon": "resources/icon.png",
     "categories": [
@@ -36,7 +36,10 @@
     "extensionKind": [
         "workspace"
     ],
-    "main": "./lib/extension",
+    "main": "./dist/extension",
+    "bin": {
+        "svlangserver": "./bin/main.js"
+    },
     "contributes": {
         "languages": [
             {
@@ -218,11 +221,20 @@
     "devDependencies": {
         "@types/node": "^12.12.0",
         "@types/vscode": "^1.52.0",
-        "typescript": "^3.7.5"
+        "ts-loader": "^9.1.2",
+        "typescript": "^3.7.5",
+        "webpack": "^5.37.0",
+        "webpack-cli": "^4.7.0"
     },
     "scripts": {
+        "vscode:prepublish": "npm run prepare && npm run webpack",
+        "webpack": "webpack --mode production --config ./webpack.config.js",
         "build": "tsc -p .",
         "prepare": "tsc -p ./src",
         "watch": "tsc --watch -p ."
-    }
+    },
+    "files": [
+        "/lib",
+        "/bin"
+    ]
 }

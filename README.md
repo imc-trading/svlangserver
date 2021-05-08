@@ -18,33 +18,28 @@ A language server for systemverilog that has been tested to work with coc.nvim, 
 The code has been tested to work with below tool versions
 - vim 8.2
   * coc.nvim 0.0.80-2cece2600a
-- VSCode 1.50.1
+- VSCode 1.52.0
 - Sublime Text 3.2.2
 - emacs 26.1
-  * lsp-mode 20210424.1525
+  * lsp-mode 20210513.1723
 - Verilator 4.008
 - Verible v0.0-1114-ged89c1b
 
 ## Installation
-Plan is to publish this package to VSCode Marketplace and NPM. Until that is done easiest way to install is
 - For coc.nvim
-  * `cd <INSTALLATION PATH> && git clone https://github.com/imc-trading/svlangserver.git`
-  * `cd svlangserver && npm install`
-  * Update the .vim/coc-settings.json to reflect the correct installation path
+  * `npm install -g @imc-trading/svlangserver`
+  * Update .vim/coc-settings.json
 - For VSCode
-  * `cd ~/.vscode/extensions && git clone https://github.com/imc-trading/svlangserver.git`
-  * `cd svlangserver && npm install`
-  * Enable the extension in VSCode
+  * Install the extension from the marketplace.
+  * Update the settings
 - For Sublime Text 3
-  * Install the Systemverilog package in sublime text
-  * `cd <INSTALLATION PATH> && git clone https://github.com/imc-trading/svlangserver.git`
-  * `cd svlangserver && npm install`
+  * Install the systemverilog package in sublime text
+  * `npm install -g @imc-trading/svlangserver`
   * Update the LSP settings (`Preferences -> Package Settings -> LSP -> settings`) and the sublime-project files
 - For emacs
   * Install lsp-mode
-  * `cd <INSTALLATION PATH> && git clone https://github.com/imc-trading/svlangserver.git`
-  * `cd svlangserver && npm install`
-  * Update the .emacs to use lsp-svlangserver (see settings section below)
+  * `npm install -g @imc-trading/svlangserver`
+  * Update .emacs/init.el
 
 NOTE: This has been tested with npm version 6.14.11
 
@@ -74,31 +69,31 @@ NOTE: This has been tested with npm version 6.14.11
     {
         "languageserver": {
             "svlangserver": {
-                "module": "<INSTALLATION PATH>/lib/svlangserver.js",
+                "command": "svlangserver",
                 "filetypes": ["systemverilog"],
                 "settings": {
                     "systemverilog.includeIndexing": ["**/*.{sv,svh}"],
                     "systemverilog.excludeIndexing": ["test/**/*.sv*"],
                     "systemverilog.defines" : [],
-                    "systemverilog.launchConfiguration": "<TOOL PATH>/verilator -sv -Wall --lint-only",
-                    "systemverilog.formatCommand": "<TOOL PATH>/verible-verilog-format"
+                    "systemverilog.launchConfiguration": "/tools/verilator -sv -Wall --lint-only",
+                    "systemverilog.formatCommand": "/tools/verible-verilog-format"
                 }
             }
         }
     }
     ```
-    For coc.nvim this file should be at `<WORKSPACE PATH>/.vim/coc-settings.json`
+    For project specific settings this file should be at `<WORKSPACE PATH>/.vim/coc-settings.json`
 - Example vscode settings file
     ```json
     {
         "systemverilog.includeIndexing": ["**/*.{sv,svh}"],
         "systemverilog.excludeIndexing": ["test/**/*.sv*"],
         "systemverilog.defines" : [],
-        "systemverilog.launchConfiguration": "<TOOL PATH>/verilator -sv -Wall --lint-only",
-        "systemverilog.formatCommand": "<TOOL PATH>/verible-verilog-format"
+        "systemverilog.launchConfiguration": "/tools/verilator -sv -Wall --lint-only",
+        "systemverilog.formatCommand": "/tools/verible-verilog-format"
     }
     ```
-    For vscode on linux this file should be at `<WORKSPACE PATH>/.vscode/settings.json`
+    For project specific settings this file should be at `<WORKSPACE PATH>/.vscode/settings.json`
 - Example Sublime Text 3 settings files
   * The global LSP settings file: LSP.sublime-settings
     ```json
@@ -106,18 +101,14 @@ NOTE: This has been tested with npm version 6.14.11
         "clients": {
             "svlangserver": {
                 "enabled": true,
-                "command": [
-                    "node",
-                    "<INSTALLATION PATH>/lib/svlangserver.js",
-                    "--stdio"
-                ],
+                "command": ["svlangserver"],
                 "languageId": "systemverilog",
                 "scopes": ["source.systemverilog"],
                 "syntaxes": ["Packages/SystemVerilog/SystemVerilog.sublime-syntax"],
                 "settings": {
                     "systemverilog.disableHoverProvider": true,
-                    "systemverilog.launchConfiguration": "<TOOL PATH>/verilator -sv --lint-only -Wall",
-                    "systemverilog.formatCommand" : "<TOOL PATH>/verible-verilog-format"
+                    "systemverilog.launchConfiguration": "/tools/verilator -sv --lint-only -Wall",
+                    "systemverilog.formatCommand" : "/tools/verible-verilog-format"
                 }
             }
         }
@@ -147,20 +138,17 @@ NOTE: This has been tested with npm version 6.14.11
     ```
 - Example settings for emacs
   * Below content goes in .emacs or init.el
-    ```lisp
-    (defvar svlangserver-installation-path "<INSTALLATION PATH>")
-    (add-to-list 'load-path svlangserver-installation-path)
-    (require 'lsp-svlangserver)
+    ```elisp
+    (require 'lsp-verilog)
 
     (custom-set-variables
-      '(lsp-clients-svlangserver-module-path (concat svlangserver-installation-path "/lib/svlangserver.js"))
-      '(lsp-clients-svlangserver-launchConfiguration "<TOOL PATH>/verilator -sv --lint-only -Wall")
-      '(lsp-clients-svlangserver-formatCommand "<TOOL PATH>/verible-verilog-format"))
+      '(lsp-clients-svlangserver-launchConfiguration "/tools/verilator -sv --lint-only -Wall")
+      '(lsp-clients-svlangserver-formatCommand "/tools/verible-verilog-format"))
 
     (add-hook 'verilog-mode-hook #'lsp-deferred)
     ```
   * The project specific settings go in .dir-locals.el
-    ```lisp
+    ```elisp
     ((verilog-mode (lsp-clients-svlangserver-workspace-additional-dirs . ("/some/lib/path"))
                    (lsp-clients-svlangserver-includeIndexing . ("src/**/*.{sv,svh}"))
                    (lsp-clients-svlangserver-excludeIndexing . ("src/test/**/*.{sv,svh}"))))
@@ -168,6 +156,19 @@ NOTE: This has been tested with npm version 6.14.11
 
 ## Commands
 - `systemverilog.build_index`: Instructs language server to rerun indexing
+
+
+## Troubleshooting
+- Editor is not able to find language server binary.
+    * Make sure the binary is in the system path as exposed to the editor. If the binary is installed in custom directory, expost that path to your editor
+- Not getting any diagnostics
+    * Make sure the launchConfiguration setting has been properly set to use verilator from the correct installation path
+- Check settings used by the language server
+    * for coc.nvim: Use the command `:CocCommand workspace.showOutput` and then select svlangserver
+    * for vscode: Check the SVLangServer output channel
+    * for sublime: Open the command palette in the tools menu and select `LSP: Toggle Log Panel`
+    * for emacs: Check the `*lsp-log*` buffer
+
 
 ## Known Issues
 - Language server doesn't understand most verification specific concepts (e.g. classes).
@@ -180,6 +181,9 @@ Although most of the code is written from scratch, this [VSCode-SystemVerilog ex
 
 ## Release Notes
 See the [changelog](CHANGELOG.md) for more details
+
+### 0.3.3
+- Updated instructions to use published packages
 
 ### 0.3.1
 - Add support for Sublime LSP and Emacs
