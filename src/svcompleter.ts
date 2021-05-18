@@ -177,8 +177,6 @@ export class SystemVerilogCompleter {
     }
 
     completionItems(document: TextDocument, position: Position): CompletionItem[] {
-        let items: CompletionItem[] = [];
-
         const svtokens: GrammarToken[] = this._indexer.getSystemVerilogCompletionTokens(document.uri);
         const svtokennums: number[] = this._indexer.getSystemVerilogCompletionTokenNumber(document, position.line, position.character);
         const svtokennum: number = svtokennums[1];
@@ -217,6 +215,9 @@ export class SystemVerilogCompleter {
                     let fileUri: string;
                     let containerInfo: SystemVerilogParser.SystemVerilogContainerInfo = [undefined, undefined];
                     [fileUri, containerInfo[0]] = this._indexer.getHierarchicalSymbol(document.uri, symParts.slice(0, -1));
+                    if ((fileUri == undefined) || (containerInfo[0] == undefined)) {
+                        return [];
+                    }
                     [fileUri, containerInfo[0], containerInfo[1]] = this._indexer.getSymbolTypeContainerInfo(fileUri, containerInfo[0]);
                     return this._stringlistToCompletionItems(SystemVerilogParser.containerAllSymbols(containerInfo, true).map(s => s.name), CompletionItemKind.Text, "identifier.hieararchical.systemverilog");
                 }
@@ -266,6 +267,7 @@ export class SystemVerilogCompleter {
                 }
                 else {
                     //DEBUG
+                    //let items: CompletionItem[] = [];
                     //for (let j = 0; j < scopes.length; j++) {
                     //    items.push({
                     //        label: scopes[0].concat(scopes[j]),
@@ -273,11 +275,12 @@ export class SystemVerilogCompleter {
                     //        data: j + 2
                     //    });
                     //}
+                    //return items;
                 }
             }
         }
 
-        return items;
+        return [];
     }
 
     private _getTokenTopScope(svtoken: GrammarToken): string {
