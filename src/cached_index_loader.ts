@@ -1,4 +1,5 @@
 import {
+    ConnectionLogger,
     fsReadFile,
     fsExists
 } from './genutils';
@@ -9,16 +10,22 @@ process.on('message', (index_file) => {
         process.exit();
     }
     else {
-        fsExists(index_file).then(() => {
-            return fsReadFile(index_file);
-        })
-        .then((data) => {
-            done = true;
-            process.send(JSON.parse(data));
-        })
-        .catch((err) => {
-            done = true;
+        try {
+            fsExists(index_file)
+                .then(() => {
+                    return fsReadFile(index_file);
+                })
+                .then((data) => {
+                    done = true;
+                    process.send(JSON.parse(data));
+                })
+                .catch((err) => {
+                    done = true;
+                    process.send([]);
+                });
+        } catch (error) {
+            ConnectionLogger.log(error);
             process.send([]);
-        });
+        }
     }
 });

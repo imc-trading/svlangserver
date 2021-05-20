@@ -85,23 +85,27 @@ connection.onInitialize((params: InitializeParams) => {
     hasConfigurationCapability = !!(params.capabilities.workspace && !!params.capabilities.workspace.configuration);
     clientName = !!params.clientInfo ? params.clientInfo.name : undefined;
 
-    svindexer.setRoot(uriToPath(params.rootUri));
-    if (clientName.startsWith("vscode")) {
-        svindexer.setClientDir(".vscode");
+    try {
+        svindexer.setRoot(uriToPath(params.rootUri));
+        if (clientName.startsWith("vscode")) {
+            svindexer.setClientDir(".vscode");
+        }
+        else if (clientName.startsWith("coc.nvim")) {
+            svindexer.setClientDir(".vim");
+        }
+        else if (clientName.startsWith("Sublime")) {
+            svindexer.setClientDir(".sublime");
+        }
+        else if (clientName.startsWith("emacs")) {
+            svindexer.setClientDir(".emacs");
+        }
+        else {
+            svindexer.setClientDir(".svlangserver");
+        }
+        verilator.setOptionsFile(svindexer.getVerilatorOptionsFile());
+    } catch (error) {
+        ConnectionLogger.error(error);
     }
-    else if (clientName.startsWith("coc.nvim")) {
-        svindexer.setClientDir(".vim");
-    }
-    else if (clientName.startsWith("Sublime")) {
-        svindexer.setClientDir(".sublime");
-    }
-    else if (clientName.startsWith("emacs")) {
-        svindexer.setClientDir(".emacs");
-    }
-    else {
-        svindexer.setClientDir(".svlangserver");
-    }
-    verilator.setOptionsFile(svindexer.getVerilatorOptionsFile());
 
     const result: InitializeResult = {
         capabilities: {
@@ -130,11 +134,15 @@ connection.onInitialize((params: InitializeParams) => {
     return result;
 });
 
+function getCurrentSettings(): Object {
+    let currentSettings: Object = new Object();
+    settings.forEach((val, prop) => { currentSettings[prop] = val; });
+    return {settings: currentSettings};
+}
+
 function getSettings() : Promise<Object> {
     if (!hasConfigurationCapability) {
-        let initSettings: Object = new Object();
-        settings.forEach((val, prop) => { initSettings[prop] = val; });
-        return Promise.resolve({settings: initSettings});
+        return Promise.resolve(getCurrentSettings());
     }
     else if (clientName == "coc.nvim") {
         return connection.workspace.getConfiguration().then(svSettings => {
@@ -143,6 +151,9 @@ function getSettings() : Promise<Object> {
                 initSettings[prop] = svSettings[prop] == undefined ? settings[prop] : svSettings[prop];
             });
             return {settings: initSettings};
+        }).catch(error => {
+            ConnectionLogger.error(error);
+            return getCurrentSettings();
         });
     }
     else {
@@ -153,6 +164,9 @@ function getSettings() : Promise<Object> {
                 initSettings[prop] = svSettings[nprop] == undefined ? settings[prop] : svSettings[nprop];
             });
             return {settings: initSettings};
+        }).catch(error => {
+            ConnectionLogger.error(error);
+            return getCurrentSettings();
         });
     }
 }
@@ -196,37 +210,48 @@ function updateSettings(change, forceUpdate: Boolean = false) {
 }
 
 connection.onInitialized(() => {
-    getSettings().then(initSettings => updateSettings(initSettings, true));
+    try {
+        getSettings()
+            .then(initSettings => updateSettings(initSettings, true))
+            .catch(error => {
+                ConnectionLogger.error(error);
+            });
+    } catch (error) {
+        ConnectionLogger.error(error);
+    }
 });
 
 connection.onDidChangeConfiguration(change => {
-    updateSettings(change);
+    try {
+        updateSettings(change);
+    } catch (error) {
+        ConnectionLogger.error(error);
+    }
 });
 
-function isValidExtension(uri: string): Boolean {
-    return (uri.endsWith(".sv") || uri.endsWith(".svh"));
-}
-
 documents.onDidChangeContent(change => {
-    if (!isValidExtension(change.document.uri)) {
-        return;
-    }
-    svindexer.processDocumentChanges(change.document);
-    if (settings.get("systemverilog.lintOnUnsaved")) {
-        lintDocument(change.document.uri, change.document.getText());
+    try {
+        svindexer.processDocumentChanges(change.document);
+        if (settings.get("systemverilog.lintOnUnsaved")) {
+            lintDocument(change.document.uri, change.document.getText());
+        }
+    } catch (error) {
+        ConnectionLogger.error(error);
     }
 });
 
 // This handler provides the initial list of the completion items.
 connection.onCompletion(
     (_textDocumentPosition: TextDocumentPositionParams): CompletionItem[] => {
-        if (settings.get("systemverilog.disableCompletionProvider")) {
+        try {
+            if (settings.get("systemverilog.disableCompletionProvider")) {
+                return [];
+            }
+            return svcompleter.completionItems(documents.get(_textDocumentPosition.textDocument.uri), _textDocumentPosition.position); //TBD try-catch
+        } catch (error) {
+            ConnectionLogger.error(error);
             return [];
         }
-        else if (!isValidExtension(_textDocumentPosition.textDocument.uri)) {
-            return [];
-        }
-        return svcompleter.completionItems(documents.get(_textDocumentPosition.textDocument.uri), _textDocumentPosition.position);
     }
 );
 
@@ -237,42 +262,53 @@ connection.onCompletionResolve(
 );
 
 connection.onDocumentSymbol((documentSymbolParams: DocumentSymbolParams): Promise<SymbolInformation[]> => {
-    if (!isValidExtension(documentSymbolParams.textDocument.uri)) {
+    try {
+        return svindexer.getDocumentSymbols(documents.get(documentSymbolParams.textDocument.uri));
+    } catch (error) {
+        ConnectionLogger.error(error);
         return Promise.resolve([]);
     }
-    return svindexer.getDocumentSymbols(documents.get(documentSymbolParams.textDocument.uri));
 });
 
 connection.onWorkspaceSymbol((workspaceSymbolParams: WorkspaceSymbolParams): Promise<SymbolInformation[]> => {
-    return svindexer.getWorkspaceSymbols(workspaceSymbolParams.query);
+    try {
+        return svindexer.getWorkspaceSymbols(workspaceSymbolParams.query);
+    } catch (error) {
+        ConnectionLogger.error(error);
+        return Promise.resolve([]);
+    }
 });
 
 connection.onDefinition((textDocumentPosition: TextDocumentPositionParams): Promise<Location[]> => {
-    if (!isValidExtension(textDocumentPosition.textDocument.uri)) {
+    try {
+        return svdefprovider.getDefinitionSymbolLocation(documents.get(textDocumentPosition.textDocument.uri), textDocumentPosition.position);
+    } catch (error) {
+        ConnectionLogger.error(error);
         return Promise.resolve([]);
     }
-    return svdefprovider.getDefinitionSymbolLocation(documents.get(textDocumentPosition.textDocument.uri), textDocumentPosition.position);
 });
 
 connection.onHover((hoverParams: HoverParams): Promise<Hover> => {
-    if (settings.get("systemverilog.disableHoverProvider")) {
-        return undefined;
-    }
-    else if (!isValidExtension(hoverParams.textDocument.uri)) {
-        return undefined;
-    }
+    try {
+        if (settings.get("systemverilog.disableHoverProvider")) {
+            return Promise.resolve(undefined);
+        }
 
-    let defText: string = svdefprovider.getDefinitionText(documents.get(hoverParams.textDocument.uri), hoverParams.position);
-    if (defText == undefined) {
+        let defText: string = svdefprovider.getDefinitionText(documents.get(hoverParams.textDocument.uri), hoverParams.position);
+        if (defText == undefined) {
+            return Promise.resolve(undefined);
+        }
+
+        return Promise.resolve({
+            contents: {
+                kind: MarkupKind.Markdown,
+                value: ["```"].concat(defText.split(/\r?\n/).map(s => "    " + s.trim())).concat(["```"]).join('\n'),
+            },
+        });
+    } catch (error) {
+        ConnectionLogger.error(error);
         return Promise.resolve(undefined);
     }
-
-    return Promise.resolve({
-        contents: {
-            kind: MarkupKind.Markdown,
-            value: ["```"].concat(defText.split(/\r?\n/).map(s => "    " + s.trim())).concat(["```"]).join('\n'),
-        },
-    });
 });
 
 function lintDocument(uri: string, text?: string) {
@@ -282,48 +318,72 @@ function lintDocument(uri: string, text?: string) {
     verilator.lint(uriToPath(uri), text)
         .then((diagnostics) => {
             connection.sendDiagnostics({ uri: uri, diagnostics });
+        })
+        .catch((error) => {
+            ConnectionLogger.error(error);
         });
 }
 
 documents.onDidOpen((event) => {
-    if (!isValidExtension(event.document.uri)) {
-        return;
+    try {
+        svindexer.indexOpenDocument(event.document);
+        lintDocument(event.document.uri);
+    } catch (error) {
+        ConnectionLogger.error(error);
     }
-    svindexer.indexOpenDocument(event.document);
-    lintDocument(event.document.uri);
 });
 
 documents.onDidSave((event) => {
-    if (!isValidExtension(event.document.uri)) {
-        return;
+    try {
+        svindexer.indexOpenDocument(event.document);
+        svindexer.updateFileInfoOnSave(event.document);
+        lintDocument(event.document.uri);
+    } catch (error) {
+        ConnectionLogger.error(error);
     }
-    svindexer.indexOpenDocument(event.document);
-    svindexer.updateFileInfoOnSave(event.document);
-    lintDocument(event.document.uri);
 });
 
 connection.onSignatureHelp((textDocumentPosition: TextDocumentPositionParams): SignatureHelp => {
-    if (settings.get("systemverilog.disableSignatureHelpProvider")) {
+    try {
+        if (settings.get("systemverilog.disableSignatureHelpProvider")) {
+            return undefined;
+        }
+        return svsignhelper.getSignatures(documents.get(textDocumentPosition.textDocument.uri), textDocumentPosition.position.line, textDocumentPosition.position.character);
+    } catch (error) {
+        ConnectionLogger.error(error);
         return undefined;
     }
-    return svsignhelper.getSignatures(documents.get(textDocumentPosition.textDocument.uri), textDocumentPosition.position.line, textDocumentPosition.position.character);
 });
 
 connection.onExecuteCommand((commandParams) => {
-    if (commandParams.command == BuildIndexCommand) {
-        svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.excludeIndexing"));
-    }
-    else {
-        ConnectionLogger.error(`Unhandled command ${commandParams.command}`);
+    try {
+        if (commandParams.command == BuildIndexCommand) {
+            svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.excludeIndexing"));
+        }
+        else {
+            throw new Error(`Unhandled command ${commandParams.command}`);
+        }
+    } catch (error) {
+        ConnectionLogger.error(error);
     }
 });
 
 connection.onDocumentFormatting((formatParams) => {
-    return svformatter.format(documents.get(formatParams.textDocument.uri), null, formatParams.options);
+    try {
+        return svformatter.format(documents.get(formatParams.textDocument.uri), null, formatParams.options);
+    } catch (error) {
+        ConnectionLogger.error(error);
+        return Promise.resolve([]);
+    }
 });
 
 connection.onDocumentRangeFormatting((rangeFormatParams) => {
-    return svformatter.format(documents.get(rangeFormatParams.textDocument.uri), rangeFormatParams.range, rangeFormatParams.options);
+    try {
+        return svformatter.format(documents.get(rangeFormatParams.textDocument.uri), rangeFormatParams.range, rangeFormatParams.options);
+    } catch (error) {
+        ConnectionLogger.error(error);
+        return Promise.resolve([]);
+    }
 });
 
 connection.onShutdown((token) => {

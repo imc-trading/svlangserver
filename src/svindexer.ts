@@ -383,7 +383,10 @@ export class SystemVerilogIndexer {
         for (let incdir of [...new Set(this._srcFiles.map(file => path.dirname(file))), ...new Set(this._srcFiles.map(file => path.dirname(file)))]) {
             optionsFileContent += '+incdir+' + incdir + '\n';
         }
-        fsWriteFile(this.getVerilatorOptionsFile(), optionsFileContent);
+        fsWriteFile(this.getVerilatorOptionsFile(), optionsFileContent)
+            .catch(error => {
+                ConnectionLogger.error(error);
+            });
     }
 
     public processDocumentChanges(document: TextDocument) {
@@ -396,7 +399,13 @@ export class SystemVerilogIndexer {
     public indexOpenDocument(document: TextDocument, retryCount: number = 0) {
         if (this._srcFiles == undefined) {
             if (retryCount < MAX_RETRY_COUNT) {
-                setTimeout(this.indexOpenDocument.bind(this, document, retryCount + 1), RETRY_DELAY_MS);
+                setTimeout(() => {
+                    try {
+                        this.indexOpenDocument(document, retryCount + 1);
+                    } catch(error) {
+                        ConnectionLogger.error(error);
+                    }
+                }, RETRY_DELAY_MS);
             }
             else {
                 ConnectionLogger.error(`Timeout trying to index document ${document.uri}`);
@@ -579,6 +588,9 @@ export class SystemVerilogIndexer {
                     ConnectionLogger.error(`Timeout trying to get document symbols for ${document.uri}`);
                 }
                 return [];
+            }).catch(error => {
+                ConnectionLogger.error(error);
+                return [];
             });
         }
         return Promise.resolve(this.getDocumentSystemVerilogSymbols(document.uri).map(symbol => symbol.toSymbolInformation(document.uri)));
@@ -631,7 +643,7 @@ export class SystemVerilogIndexer {
     }
 
     getWorkspaceSymbols(query: string): Promise<SymbolInformation[]> {
-        return new Promise((resolve, reject) => {
+        return new Promise<SymbolInformation[]>((resolve, reject) => {
             if (query==undefined || query.length === 0) {
                 resolve(this.mostRecentSymbols);
             } else {
@@ -639,6 +651,9 @@ export class SystemVerilogIndexer {
                 this.updateMostRecentSymbols(results.slice(0)); //pass a shallow copy of the array
                 resolve(results);
             }
+        }).catch(error => {
+            ConnectionLogger.error(error);
+            return [];
         });
     }
 
