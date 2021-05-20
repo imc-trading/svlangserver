@@ -84,9 +84,21 @@ export class ConnectionLogger {
 
     private static sendNotification(type: MessageType, message: string) {
         if (!ConnectionLogger._connection) {
-            return;
+            switch(type) {
+                case MessageType.Error: {
+                    console.error(message);
+                    break;
+                }
+
+                default: {
+                    console.log(message);
+                    break;
+                }
+            }
         }
-        ConnectionLogger._connection.sendNotification(LogMessageNotification.type, {type: type, message: message});
+        else {
+            ConnectionLogger._connection.sendNotification(LogMessageNotification.type, {type: type, message: message});
+        }
     }
 
     public static setConnection(connection)
@@ -94,15 +106,29 @@ export class ConnectionLogger {
         ConnectionLogger._connection = connection;
     }
 
-    public static log(message: string) {
-        ConnectionLogger.sendNotification(MessageType.Log, message);
+    public static log(message: string, prefix: boolean = true) {
+        ConnectionLogger.sendNotification(MessageType.Log, `${prefix ? "INFO: ": ""}${message}`);
     }
 
-    public static warn(message: string) {
-        ConnectionLogger.sendNotification(MessageType.Warning, message);
+    public static warn(message: string, prefix: boolean = true) {
+        ConnectionLogger.sendNotification(MessageType.Warning, `${prefix ? "WARNING: ": ""}${message}`);
     }
 
-    public static error(message: string) {
-        ConnectionLogger.sendNotification(MessageType.Error, message);
+    public static error(message: string, prefix: boolean = true) {
+        ConnectionLogger.sendNotification(MessageType.Error,`${prefix ? "ERROR: ": ""}${message}`);
     }
+}
+
+export function childProcessStdoutRedir(data) {
+    let message: string = data.toString();
+    if (message.startsWith("WARNING: ")) {
+        ConnectionLogger.warn(message, false);
+    }
+    else {
+        ConnectionLogger.log(message, false);
+    }
+}
+
+export function childProcessStderrRedir(data) {
+    ConnectionLogger.error(data.toString(), false);
 }

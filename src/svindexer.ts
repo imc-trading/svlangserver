@@ -39,6 +39,8 @@ import {
 } from './svcompletion_grammar';
 
 import {
+    childProcessStdoutRedir,
+    childProcessStderrRedir,
     ConnectionLogger,
     fsWriteFile,
     fsWriteFileSync,
@@ -203,32 +205,38 @@ export class SystemVerilogIndexer {
     }
 
     private _loadCachedIndex() {
-        const forkedCachedIndexLoader = fork(resolvedPath('./cached_index_loader.js'))
+        const forkedCachedIndexLoader = fork(resolvedPath('./cached_index_loader.js'), [], { silent: true })
         forkedCachedIndexLoader.on('message', (rawCachedFilesInfo) => {
-            if (!rawCachedFilesInfo.version || (rawCachedFilesInfo.version != CACHED_INDEX_FILE_VERSION)) {
-                this._indexIsSaveable = true;
-                this._cacheLoadingDone = true;
-                return;
-            }
-            let cachedFilesInfo: Map<string, IndexFileInfo> = new Map(rawCachedFilesInfo.info.map(info => [
-                info[0], <IndexFileInfo>({
-                    symbolsInfo: SystemVerilogParser.jsonToFileSymbolsInfo(info[0], info[1][0]),
-                    pkgdeps: info[1][1],
-                    rank: info[1][2]
-                })
-            ]));
-            let cacheFileCount: number = 0;
-            for (let file of this._srcFiles) {
-                if (!this._indexedFilesInfo.has(file) && cachedFilesInfo.has(file)) {
-                    let info = cachedFilesInfo.get(file);
-                    this._updateFileInfo(file, info.symbolsInfo, info.pkgdeps);
-                    cacheFileCount++;
+            try {
+                if (!rawCachedFilesInfo.version || (rawCachedFilesInfo.version != CACHED_INDEX_FILE_VERSION)) {
+                    this._indexIsSaveable = true;
+                    this._cacheLoadingDone = true;
+                    return;
                 }
+                let cachedFilesInfo: Map<string, IndexFileInfo> = new Map(rawCachedFilesInfo.info.map(info => [
+                    info[0], <IndexFileInfo>({
+                        symbolsInfo: SystemVerilogParser.jsonToFileSymbolsInfo(info[0], info[1][0]),
+                        pkgdeps: info[1][1],
+                        rank: info[1][2]
+                    })
+                ]));
+                let cacheFileCount: number = 0;
+                for (let file of this._srcFiles) {
+                    if (!this._indexedFilesInfo.has(file) && cachedFilesInfo.has(file)) {
+                        let info = cachedFilesInfo.get(file);
+                        this._updateFileInfo(file, info.symbolsInfo, info.pkgdeps);
+                        cacheFileCount++;
+                    }
+                }
+                ConnectionLogger.log(`INFO: Loaded cached index for ${cacheFileCount} files`);
+                forkedCachedIndexLoader.send('done');
+                this._cacheLoadingDone = true;
+            } catch (error) {
+                ConnectionLogger.error(error);
             }
-            ConnectionLogger.log(`INFO: Loaded cached index for ${cacheFileCount} files`);
-            forkedCachedIndexLoader.send('done');
-            this._cacheLoadingDone = true;
         });
+        forkedCachedIndexLoader.stdout.on('data', childProcessStdoutRedir);
+        forkedCachedIndexLoader.stderr.on('data', childProcessStderrRedir);
         forkedCachedIndexLoader.send(this.getIndexFile());
     }
 
@@ -238,51 +246,57 @@ export class SystemVerilogIndexer {
         }
         ConnectionLogger.log(`INFO: Indexing ${this._srcFiles.length} files ...`);
         var startTime = performance.now();
-        const forkedIndexBuilder = fork(resolvedPath('./svindex_builder.js'));
+        const forkedIndexBuilder = fork(resolvedPath('./svindex_builder.js'), [], { silent: true });
         let offset: number = 0;
         let waitPreprocCache: Boolean = false;
         forkedIndexBuilder.on('message', ([jsonFileSymbolsInfo, pkgdeps]) => {
-            if (this._indexProgress == IndexProgressType.Halting) {
-                forkedIndexBuilder.send(['exit', '']);
-                this._indexProgress = IndexProgressType.Halted;
-                return;
-            }
-
-            if (waitPreprocCache) {
-                for (let [k, v] of SystemVerilogParser.includeCacheFromJSON(jsonFileSymbolsInfo)) {
-                    this._preprocCache.set(k, v);
-                    this._indexedFilesInfo.set(v[0], {symbolsInfo: SystemVerilogParser.preprocToFileSymbolsInfo(v[1].symbols, v[1].includes), pkgdeps: null, rank: 0});
+            try {
+                if (this._indexProgress == IndexProgressType.Halting) {
+                    forkedIndexBuilder.send(['exit', '']);
+                    this._indexProgress = IndexProgressType.Halted;
+                    return;
                 }
-                ConnectionLogger.log(`INFO: Done indexing ${this._srcFiles.length + this._preprocCache.size} files!!!`);
-                this._indexProgress = IndexProgressType.Done;
-                var endTime = performance.now();
-                ConnectionLogger.log(`INFO: Took ${endTime - startTime} milliseconds`);
-                forkedIndexBuilder.send(['exit', '']);
-                this._updatePkgFilesInfo();
-                this.saveIndex();
-                this._generateVerilatorOptionsFile();
-            }
-            else {
-                //DBG ConnectionLogger.log(`DEBUG: Received ${jsonFileSymbolsInfo.length} symbols and ${pkgdeps.length} pkgdeps for ${this._srcFiles[offset]}`);
-                let symbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo[] = SystemVerilogParser.jsonToFileSymbolsInfo(pathToUri(this._srcFiles[offset]), jsonFileSymbolsInfo);
-                if (this._indexedFilesInfo.has(this._srcFiles[offset])) {
-                    this._incrementalUpdateFileInfo(this._srcFiles[offset], symbolsInfo, pkgdeps);
+
+                if (waitPreprocCache) {
+                    for (let [k, v] of SystemVerilogParser.includeCacheFromJSON(jsonFileSymbolsInfo)) {
+                        this._preprocCache.set(k, v);
+                        this._indexedFilesInfo.set(v[0], {symbolsInfo: SystemVerilogParser.preprocToFileSymbolsInfo(v[1].symbols, v[1].includes), pkgdeps: null, rank: 0});
+                    }
+                    ConnectionLogger.log(`INFO: Done indexing ${this._srcFiles.length + this._preprocCache.size} files!!!`);
+                    this._indexProgress = IndexProgressType.Done;
+                    var endTime = performance.now();
+                    ConnectionLogger.log(`INFO: Took ${endTime - startTime} milliseconds`);
+                    forkedIndexBuilder.send(['exit', '']);
+                    this._updatePkgFilesInfo();
+                    this.saveIndex();
+                    this._generateVerilatorOptionsFile();
                 }
                 else {
-                    this._updateFileInfo(this._srcFiles[offset], symbolsInfo, pkgdeps);
-                }
-                this._indexIsSaveable = true;
+                    //DBG ConnectionLogger.log(`DEBUG: Received ${jsonFileSymbolsInfo.length} symbols and ${pkgdeps.length} pkgdeps for ${this._srcFiles[offset]}`);
+                    let symbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo[] = SystemVerilogParser.jsonToFileSymbolsInfo(pathToUri(this._srcFiles[offset]), jsonFileSymbolsInfo);
+                    if (this._indexedFilesInfo.has(this._srcFiles[offset])) {
+                        this._incrementalUpdateFileInfo(this._srcFiles[offset], symbolsInfo, pkgdeps);
+                    }
+                    else {
+                        this._updateFileInfo(this._srcFiles[offset], symbolsInfo, pkgdeps);
+                    }
+                    this._indexIsSaveable = true;
 
-                if (offset == this._srcFiles.length - 1) {
-                    waitPreprocCache = true;
-                    forkedIndexBuilder.send(['done', '']);
+                    if (offset == this._srcFiles.length - 1) {
+                        waitPreprocCache = true;
+                        forkedIndexBuilder.send(['done', '']);
+                    }
+                    else {
+                        offset++;
+                        forkedIndexBuilder.send(['index', this._srcFiles[offset]]);
+                    }
                 }
-                else {
-                    offset++;
-                    forkedIndexBuilder.send(['index', this._srcFiles[offset]]);
-                }
+            } catch (error) {
+                ConnectionLogger.error(error);
             }
         });
+        forkedIndexBuilder.stdout.on('data', childProcessStdoutRedir);
+        forkedIndexBuilder.stderr.on('data', childProcessStderrRedir);
         forkedIndexBuilder.send(['config', this._srcFiles, this._userDefines.map(d => [d[0], d[2]])]);
         forkedIndexBuilder.send(['index', this._srcFiles[offset]]);
     }
@@ -558,6 +572,9 @@ export class SystemVerilogIndexer {
         return fsWriteFile(this.getIndexFile(), this._indexToCache())
                 .then(() => {
                     this._indexIsSaveable = false;
+                })
+                .catch(error => {
+                    ConnectionLogger.error(error);
                 });
     }
 
