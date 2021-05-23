@@ -2638,7 +2638,7 @@ export class SystemVerilogParser {
     }
 
     public static includeCacheFromJSON(includeCacheJSON): Map<string, [string, PreprocIncInfo, TextDocument]> {
-        return new Map(includeCacheJSON.map(e => [e[0], [e[1][0], SystemVerilogPreprocessor.preprocIncInfoFromJSON(e[0], e[1][1]), e[1][2]]]));
+        return new Map(includeCacheJSON.map(e => [e[0], [e[1][0], SystemVerilogPreprocessor.preprocIncInfoFromJSON(e[0], e[1][1]), TextDocument.create(e[1][2]._uri, e[1][2]._languageId, e[1][2]._version, e[1][2]._content)]]));
     }
 }
 
