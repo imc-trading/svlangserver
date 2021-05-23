@@ -240,6 +240,13 @@ export class SystemVerilogIndexer {
         forkedCachedIndexLoader.send(this.getIndexFile());
     }
 
+    private _setHeaderSymbols(file: string, preprocIncInfo: PreprocIncInfo) {
+        if (this._indexedFilesInfo.has(file) && (this._indexedFilesInfo.get(file).pkgdeps != null)) {
+            this._incrementalUpdateFileInfo(file, [], []);
+        }
+        this._indexedFilesInfo.set(file, {symbolsInfo: SystemVerilogParser.preprocToFileSymbolsInfo(preprocIncInfo.symbols, preprocIncInfo.includes), pkgdeps: null, rank: 0});
+    }
+
     private _buildIndex() {
         if (!this._srcFiles) {
             return;
@@ -260,7 +267,7 @@ export class SystemVerilogIndexer {
                 if (waitPreprocCache) {
                     for (let [k, v] of SystemVerilogParser.includeCacheFromJSON(jsonFileSymbolsInfo)) {
                         this._preprocCache.set(k, v);
-                        this._indexedFilesInfo.set(v[0], {symbolsInfo: SystemVerilogParser.preprocToFileSymbolsInfo(v[1].symbols, v[1].includes), pkgdeps: null, rank: 0});
+                        this._setHeaderSymbols(v[0], v[1]);
                     }
                     ConnectionLogger.log(`INFO: Done indexing ${this._srcFiles.length + this._preprocCache.size} files!!!`);
                     this._indexProgress = IndexProgressType.Done;
@@ -427,9 +434,13 @@ export class SystemVerilogIndexer {
             return;
         }
 
+        let file: string = uriToPath(document.uri);
+        if (this._preprocCache.has(file)) {
+            return;
+        }
+
         this.processDocumentChanges(document);
 
-        let file: string = uriToPath(document.uri);
         if (!this._lastSavedFilesInfo.has(file) && this._indexedFilesInfo.has(file)) {
             this._lastSavedFilesInfo.set(file, this._indexedFilesInfo.get(file));
         }
@@ -444,7 +455,7 @@ export class SystemVerilogIndexer {
         let pkgs: string[] = this._getContainers(fileSymbolsInfo).pkgs;
         this._indexedFilesInfo.set(file, {symbolsInfo: fileSymbolsInfo, pkgdeps: pkgs.length > 0 ? pkgdeps : null, rank: rank});
         for (let entry of this._preprocCache.values()) {
-            this._indexedFilesInfo.set(entry[0], {symbolsInfo: SystemVerilogParser.preprocToFileSymbolsInfo(entry[1].symbols, entry[1].includes), pkgdeps: null, rank: 0});
+            this._setHeaderSymbols(entry[0], entry[1]);
         }
     }
 
