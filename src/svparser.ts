@@ -492,18 +492,26 @@ export class SystemVerilogParser {
             tokenOrderIndex++;
         }
 
-        let defLocations: DefinitionLocations = (this._documentPath == this._tokenOrder[tokenOrderIndices[0]][0]) ? [] : [pathToUri(this._tokenOrder[tokenOrderIndices[0]][0])];
+        let document: TextDocument = this._getDocumentFromTokenOrderIndex(tokenOrderIndices[0]);
+        if (document == undefined) {
+            ConnectionLogger.error(`Could not find the document for the given range. Falling back to default`);
+            return Range.create(
+                this._document.positionAt(this._svtokens[startToken].startTokenIndex),
+                this._document.positionAt(this._svtokens[endToken].endTokenIndex + 1)
+            );
+        }
+        let defLocations: DefinitionLocations = (this._document.uri == document.uri) ? [] : [document.uri];
         let currToken: number = startToken;
         for (let i: number = 1; i < tokenOrderIndices.length; i++) {
             defLocations.push(Range.create(
-                this._document.positionAt(this._svtokens[currToken].startTokenIndex),
-                this._document.positionAt(this._svtokens[this._tokenOrder[tokenOrderIndices[i]][1] - 1].endTokenIndex + 1)
+                document.positionAt(this._svtokens[currToken].startTokenIndex),
+                document.positionAt(this._svtokens[this._tokenOrder[tokenOrderIndices[i]][1] - 1].endTokenIndex + 1)
             ));
             currToken = this._tokenOrder[tokenOrderIndices[i]][1];
         }
         defLocations.push(Range.create(
-            this._document.positionAt(this._svtokens[currToken].startTokenIndex),
-            this._document.positionAt(this._svtokens[endToken].endTokenIndex + 1)
+            document.positionAt(this._svtokens[currToken].startTokenIndex),
+            document.positionAt(this._svtokens[endToken].endTokenIndex + 1)
         ));
         if (defLocations.length == 1) {
             defLocations = <Range>defLocations[0];
@@ -512,12 +520,12 @@ export class SystemVerilogParser {
         return defLocations;
     }
 
-    private _getSymbolDocument(symToken: number) {
+    private _getDocumentFromTokenOrderIndex(tokenOrderIndex: number): TextDocument {
         let document: TextDocument;
-        let tokenOrderIndex: number = this._getTokenOrderIndex(symToken);
         let file: string = this._documentPath;
         if (tokenOrderIndex == undefined) {
             ConnectionLogger.error(`Could not figure out the source file for the given range. Falling back to default`);
+            return undefined;
         }
         else {
             file = this._tokenOrder[tokenOrderIndex][0];
@@ -547,7 +555,10 @@ export class SystemVerilogParser {
     }
 
     private _createSymbol(symToken: number, symbolType: string[], tokenRange?: [number, number], symbolText?: string): SystemVerilogSymbol {
-        let document: TextDocument = this._getSymbolDocument(symToken);
+        let document: TextDocument = this._getDocumentFromTokenOrderIndex(this._getTokenOrderIndex(symToken));
+        if (document == undefined) {
+            return;
+        }
         let symbolName: string = symbolText || this._svtokens[symToken].text;
         let symbolRange: Range = Range.create(
             document.positionAt(this._svtokens[symToken].startTokenIndex),
@@ -556,7 +567,7 @@ export class SystemVerilogParser {
         return new SystemVerilogSymbol(
             symbolName,
             tokenRange ? this._getDefLocations(tokenRange[0], tokenRange[1]) : undefined,
-            symbolRange,
+            document.uri == this._document.uri ? symbolRange : [document.uri, symbolRange],
             this._containerStack.toStringList(),
             symbolType
         );
