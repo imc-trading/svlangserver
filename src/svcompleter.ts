@@ -166,7 +166,7 @@ export class SystemVerilogCompleter {
 
     private _stringlistToCompletionItems(syms: string[], kind: CompletionItemKind, data: string): CompletionItem[] {
         let result: CompletionItem[] = [];
-        for (let sym of syms) {
+        for (let sym of (syms || [])) {
             result.push({
                 label: sym,
                 kind: kind,
@@ -177,114 +177,105 @@ export class SystemVerilogCompleter {
     }
 
     completionItems(document: TextDocument, position: Position): CompletionItem[] {
-        const svtokens: GrammarToken[] = this._indexer.getSystemVerilogCompletionTokens(document.uri);
-        const svtokennums: number[] = this._indexer.getSystemVerilogCompletionTokenNumber(document, position.line, position.character);
-        const svtokennum: number = svtokennums[1];
-        const svtoken: GrammarToken | null = (svtokennum > 0) && (svtokennum < svtokens.length) ? svtokens[svtokennum] : null;
+        try {
+            const svtokens: GrammarToken[] = this._indexer.getSystemVerilogCompletionTokens(document.uri);
+            const svtokennums: number[] = this._indexer.getSystemVerilogCompletionTokenNumber(document, position.line, position.character);
+            const svtokennum: number = svtokennums[1];
+            const svtoken: GrammarToken | null = (svtokennum >= 0) && (svtokennum < svtokens.length) ? svtokens[svtokennum] : null;
 
-        if (!svtoken) {
-            return [];
-        }
+            if (!svtoken) {
+                return [];
+            }
 
-        const scopes : string[] = [svtoken.text].concat(svtoken.scopes); //DEBUG
-        //DEBUG const scopes : string[] = svtoken.scopes; //DEBUG
-        if (scopes.length > 0) {
-            if (scopes[scopes.length - 1] === "system.identifier.systemverilog") {
-                return sv_completion_systemtask_items;
-            }
-            //TBD just $ based completion?
-            else if(scopes[scopes.length - 1] === "macro.identifier.systemverilog") {
-                let result: CompletionItem[] = sv_completion_tick_items;
-                let macroFilesInfo: [string, SystemVerilogSymbol[]][] = this._indexer.getMacros(document.uri);
-                for (let macroFileInfo of macroFilesInfo) {
-                    result = result.concat(macroFileInfo[1].map(sym => {
-                        return {
-                            label: sym.name,
-                            kind:  CompletionItemKind.Text,
-                            data: "macro.systemverilog"
-                        };
-                    }));
+            const scopes : string[] = svtoken.scopes || [];
+            if (scopes.length > 0) {
+                if (scopes[scopes.length - 1] === "system.identifier.systemverilog") {
+                    return sv_completion_systemtask_items;
                 }
-                return result;
-            }
-            //TBD just ` based completion?
-            else {
-                if ((svtokennums[0] != svtokennums[1]) || (scopes[scopes.length - 1] == "identifier.hierarchical.systemverilog")) {
-                    const symTokens: GrammarToken[] = svtokens.slice(svtokennums[0], svtokennums[1] + 1);
-                    let symParts: string[] = this._indexer.getHierParts(symTokens.map(t => t.text).join(''), symTokens, document.offsetAt(position) - svtokens[svtokennums[0]].index);
-                    let fileUri: string;
-                    let containerInfo: SystemVerilogParser.SystemVerilogContainerInfo = [undefined, undefined];
-                    [fileUri, containerInfo[0]] = this._indexer.getHierarchicalSymbol(document.uri, symParts.slice(0, -1));
-                    if ((fileUri == undefined) || (containerInfo[0] == undefined)) {
-                        return [];
+                //TBD just $ based completion?
+                else if(scopes[scopes.length - 1] === "macro.identifier.systemverilog") {
+                    let result: CompletionItem[] = sv_completion_tick_items;
+                    let macroFilesInfo: [string, SystemVerilogSymbol[]][] = this._indexer.getMacros(document.uri);
+                    for (let macroFileInfo of macroFilesInfo) {
+                        result = result.concat(macroFileInfo[1].map(sym => {
+                            return {
+                                label: sym.name,
+                                kind:  CompletionItemKind.Text,
+                                data: "macro.systemverilog"
+                            };
+                        }));
                     }
-                    [fileUri, containerInfo[0], containerInfo[1]] = this._indexer.getSymbolTypeContainerInfo(fileUri, containerInfo[0]);
-                    return this._stringlistToCompletionItems(SystemVerilogParser.containerAllSymbols(containerInfo, true).map(s => s.name), CompletionItemKind.Text, "identifier.hieararchical.systemverilog");
+                    return result;
                 }
-                else if (scopes[scopes.length - 1] == "identifier.scoped.systemverilog") {
-                    let idparts: string[] = svtoken.text.split('::');
-                    if ((idparts.length == 1) || (idparts.length == 2)) {
-                        return this._stringlistToCompletionItems(this._indexer.getPackageSymbols(idparts[0]).map(sym => sym.name), CompletionItemKind.Text, "import.package_item.systemverilog");
-                    }
-                }
-                else if (scopes[scopes.length - 1] == "identifier.simple.systemverilog") {
-                    if (scopes.length >= 2) {
-                        if (scopes[scopes.length - 2] == "import.statement.systemverilog") {
-                            return this._stringlistToCompletionItems(this._indexer.getPackages(), CompletionItemKind.Text, "import.package.systemverilog");
+                //TBD just ` based completion?
+                else {
+                    if ((svtokennums[0] != svtokennums[1]) || (scopes[scopes.length - 1] == "identifier.hierarchical.systemverilog")) {
+                        const symTokens: GrammarToken[] = svtokens.slice(svtokennums[0], svtokennums[1] + 1) || [];
+                        let symParts: string[] = this._indexer.getHierParts(symTokens.map(t => t.text).join(''), symTokens, document.offsetAt(position) - svtokens[svtokennums[0]].index);
+                        let fileUri: string;
+                        let containerInfo: SystemVerilogParser.SystemVerilogContainerInfo = [undefined, undefined];
+                        [fileUri, containerInfo[0]] = this._indexer.getHierarchicalSymbol(document.uri, symParts.slice(0, -1));
+                        if ((fileUri == undefined) || (containerInfo[0] == undefined)) {
+                            return [];
                         }
-                        else if (scopes[scopes.length - 2] == "parantheses.block.systemverilog") {
-                            let prevTokenNum: number = this._getPrevTokenNum(svtokens, svtokennum);
-                            if ((prevTokenNum >= 0) && (svtokens[prevTokenNum].scopes.length > 0) && (svtokens[prevTokenNum].text == ".")) {
-                                return this._getInstanceCompletions(svtokens, prevTokenNum);
+                        [fileUri, containerInfo[0], containerInfo[1]] = this._indexer.getSymbolTypeContainerInfo(fileUri, containerInfo[0]);
+                        return this._stringlistToCompletionItems(SystemVerilogParser.containerAllSymbols(containerInfo, true).map(s => s.name), CompletionItemKind.Text, "identifier.hieararchical.systemverilog");
+                    }
+                    else if (scopes[scopes.length - 1] == "identifier.scoped.systemverilog") {
+                        let idparts: string[] = svtoken.text.split('::') || [];
+                        if ((idparts.length == 1) || (idparts.length == 2)) {
+                            return this._stringlistToCompletionItems(this._indexer.getPackageSymbols(idparts[0]).map(sym => sym.name), CompletionItemKind.Text, "import.package_item.systemverilog");
+                        }
+                    }
+                    else if (scopes[scopes.length - 1] == "identifier.simple.systemverilog") {
+                        if (scopes.length >= 2) {
+                            if (scopes[scopes.length - 2] == "import.statement.systemverilog") {
+                                return this._stringlistToCompletionItems(this._indexer.getPackages(), CompletionItemKind.Text, "import.package.systemverilog");
                             }
-                        }
-                        else {
-                            let fileCompletionItems: CompletionItem[] = [];
-                            // get imported symbols
-                            for (let [pkgName, importedSyms] of this._indexer.getFileImports(document.uri)) {
-                                fileCompletionItems = fileCompletionItems.concat(importedSyms.map(name => {
+                            else if (scopes[scopes.length - 2] == "parantheses.block.systemverilog") {
+                                let prevTokenNum: number = this._getPrevTokenNum(svtokens, svtokennum);
+                                if ((prevTokenNum >= 0) && (svtokens[prevTokenNum].scopes.length > 0) && (svtokens[prevTokenNum].text == ".")) {
+                                    return this._getInstanceCompletions(svtokens, prevTokenNum);
+                                }
+                            }
+                            else {
+                                let fileCompletionItems: CompletionItem[] = [];
+                                // get imported symbols
+                                for (let [pkgName, importedSyms] of this._indexer.getFileImports(document.uri)) {
+                                    fileCompletionItems = fileCompletionItems.concat(importedSyms.map(name => {
+                                        return {
+                                            label: name,
+                                            kind: CompletionItemKind.Text,
+                                            data: "identifier.regular.systemverilog"
+                                        };
+                                    }));
+                                }
+                                // get file symbols
+                                fileCompletionItems = fileCompletionItems.concat(this._indexer.getDocumentSystemVerilogSymbols(document.uri, false).map(sym => {
                                     return {
-                                        label: name,
+                                        label: (sym.type[0] == "macro") ? `\`${sym.name}` : sym.name,
                                         kind: CompletionItemKind.Text,
                                         data: "identifier.regular.systemverilog"
                                     };
                                 }));
+                                return fileCompletionItems;
                             }
-                            // get file symbols
-                            fileCompletionItems = fileCompletionItems.concat(this._indexer.getDocumentSystemVerilogSymbols(document.uri, false).map(sym => {
-                                return {
-                                    label: (sym.type[0] == "macro") ? `\`${sym.name}` : sym.name,
-                                    kind: CompletionItemKind.Text,
-                                    data: "identifier.regular.systemverilog"
-                                };
-                            }));
-                            return fileCompletionItems;
                         }
                     }
-                }
-                else if ((svtoken.text == ".") && (scopes.length >= 2)) {
-                    return this._getInstanceCompletions(svtokens, svtokennum);
-                }
-                else {
-                    //DEBUG
-                    //let items: CompletionItem[] = [];
-                    //for (let j = 0; j < scopes.length; j++) {
-                    //    items.push({
-                    //        label: scopes[0].concat(scopes[j]),
-                    //        kind: CompletionItemKind.Text,
-                    //        data: j + 2
-                    //    });
-                    //}
-                    //return items;
+                    else if ((svtoken.text == ".") && (scopes.length >= 2)) {
+                        return this._getInstanceCompletions(svtokens, svtokennum);
+                    }
                 }
             }
+        } catch (error) {
+            ConnectionLogger.error(error);
         }
 
         return [];
     }
 
     private _getTokenTopScope(svtoken: GrammarToken): string {
-        return svtoken.scopes.length > 0 ? svtoken.scopes[svtoken.scopes.length - 1] : "";
+        return !!svtoken && svtoken.scopes.length > 0 ? svtoken.scopes[svtoken.scopes.length - 1] : "";
     }
 
     private _getPrevTokenNum(svtokens: GrammarToken[], tokenNum: number): number {

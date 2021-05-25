@@ -101,6 +101,10 @@ export class SystemVerilogDefinitionProvider {
         let svtokens: GrammarToken[] = this._indexer.getSystemVerilogCompletionTokens(document.uri);
         let extTokenNums: number[] = this._indexer.getSystemVerilogCompletionTokenNumber(document, position.line, position.character + 1);
         let tokenNum: number = extTokenNums[1];
+        if (tokenNum == undefined) {
+            return [undefined, undefined];
+        }
+
         let scope: string = svtokens[tokenNum].scopes[svtokens[tokenNum].scopes.length - 1];
         if (scope.startsWith("macro.")) {
             let defText: string = svtokens[tokenNum].text.slice(1).replace(/\s*\($/, "");
@@ -190,28 +194,38 @@ export class SystemVerilogDefinitionProvider {
     }
 
     public getDefinitionSymbolLocation(document: TextDocument, position: Position): Promise<Location[]> {
-        let symbolInfo: [string, SystemVerilogSymbol|number] = this._getDefinition(document, position, false);
-        if (symbolInfo[0] == undefined) {
+        try {
+            let symbolInfo: [string, SystemVerilogSymbol|number] = this._getDefinition(document, position, false);
+            if (symbolInfo[0] == undefined) {
+                return Promise.resolve([]);
+            }
+
+            if (symbolInfo[0] == "") {
+                return Promise.resolve([Location.create("", Range.create(<number>symbolInfo[1], 0, 0, 0))]);
+            }
+
+            return Promise.resolve([(<SystemVerilogSymbol>(symbolInfo[1])).getSymbolLocation(symbolInfo[0])]);
+        } catch (error) {
+            ConnectionLogger.error(error);
             return Promise.resolve([]);
         }
-
-        if (symbolInfo[0] == "") {
-            return Promise.resolve([Location.create("", Range.create(<number>symbolInfo[1], 0, 0, 0))]);
-        }
-
-        return Promise.resolve([(<SystemVerilogSymbol>(symbolInfo[1])).getSymbolLocation(symbolInfo[0])]);
     }
 
     public getDefinitionText(document: TextDocument, position: Position): string {
-        let symbolInfo: [string, SystemVerilogSymbol|number] = this._getDefinition(document, position, true);
-        if (symbolInfo[0] == undefined) {
+        try {
+            let symbolInfo: [string, SystemVerilogSymbol|number] = this._getDefinition(document, position, true);
+            if (symbolInfo[0] == undefined) {
+                return undefined;
+            }
+
+            if (symbolInfo[0] == "") {
+                return this._indexer.getUserDefine(<number>(symbolInfo[1]));
+            }
+
+            return (<SystemVerilogSymbol>(symbolInfo[1])).getDefinition(symbolInfo[0]);
+        } catch(error) {
+            ConnectionLogger.error(error);
             return undefined;
         }
-
-        if (symbolInfo[0] == "") {
-            return this._indexer.getUserDefine(<number>(symbolInfo[1]));
-        }
-
-        return (<SystemVerilogSymbol>(symbolInfo[1])).getDefinition(symbolInfo[0]);
     }
 }

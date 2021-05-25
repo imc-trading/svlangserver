@@ -110,7 +110,7 @@ export class VerilatorDiagnostics {
                     }
                     if (statusRef[0]) {
                         this._alreadyRunning.delete(file);
-                        resolve(this.parseDiagnostics(error, stdout, stderr, actFile));
+                        resolve(this._parseDiagnostics(error, stdout, stderr, actFile));
                     }
                     else {
                         resolve([]);
@@ -122,29 +122,41 @@ export class VerilatorDiagnostics {
     }
 
     public lint(file: string, text?: string): Promise<Diagnostic[]> {
-        if (text == undefined) {
-            return this._lintImmediate(file, text);
-        }
-        else {
-            if (this._fileWaiting.has(file)) {
-                let [waitTimer, resolver] = this._fileWaiting.get(file);
-                clearTimeout(waitTimer);
-                resolver(false);
+        try {
+            if (text == undefined) {
+                return this._lintImmediate(file, text)
+                            .catch(error => {
+                                ConnectionLogger.error(error);
+                                return [];
+                            });
             }
-
-            return new Promise(resolve => {
-                this._fileWaiting.set(file, [setTimeout(resolve, 1000, true), resolve]);
-            }).then((success) => {
-                if (!!success) {
-                    this._fileWaiting.delete(file);
-                    return this._lintImmediate(file, text);
+            else {
+                if (this._fileWaiting.has(file)) {
+                    let [waitTimer, resolver] = this._fileWaiting.get(file);
+                    clearTimeout(waitTimer);
+                    resolver(false);
                 }
-                return [];
-            });
+
+                return new Promise(resolve => {
+                    this._fileWaiting.set(file, [setTimeout(resolve, 1000, true), resolve]);
+                }).then((success) => {
+                    if (!!success) {
+                        this._fileWaiting.delete(file);
+                        return this._lintImmediate(file, text);
+                    }
+                    return [];
+                }).catch(error => {
+                    ConnectionLogger.error(error);
+                    return [];
+                });
+            }
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return Promise.resolve([]);
         }
     }
 
-    public parseDiagnostics(error: child.ExecException, stdout: string, stderr: string, file: string): Diagnostic[] {
+    private _parseDiagnostics(error: child.ExecException, stdout: string, stderr: string, file: string): Diagnostic[] {
         let diagnostics: Diagnostic[] = [];
         let lines = stderr.split(/\r?\n/g);
 

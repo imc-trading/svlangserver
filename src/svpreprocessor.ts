@@ -804,8 +804,13 @@ export class SystemVerilogPreprocessor {
     }
 
     public static tokenize(preText: string): GrammarToken[] {
-        let _grammarEngine: GrammarEngine = new GrammarEngine(svpreproc_grammar, "meta.any.systemverilog");
-        return _grammarEngine.tokenize(preText)
+        try {
+            let _grammarEngine: GrammarEngine = new GrammarEngine(svpreproc_grammar, "meta.any.systemverilog");
+            return _grammarEngine.tokenize(preText)
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return [];
+        }
     }
 
     private _parseInc(document: TextDocument, includeFilePaths: string[], includeCache: Map<string, [string, PreprocIncInfo, TextDocument]>, macroInfo: Map<string, MacroInfo>, fileList: Set<string>, text?: string): PreprocIncInfo {
@@ -936,14 +941,24 @@ export class SystemVerilogPreprocessor {
     }
 
     public parse(document: TextDocument, includeFilePaths: string[], includeCache: Map<string, [string, PreprocIncInfo, TextDocument]>, macroInfo: Map<string, MacroInfo>, text?: string): PreprocInfo {
-        let preprocIncInfo: PreprocIncInfo = this._parseInc(document, includeFilePaths, includeCache, macroInfo, new Set(), text);
-        let postTokensInfo: [PostToken[], [string, number][]] = this._getAllPostTokens(this._filePath, this._preprocIncInfo.postTokens, this._preprocIncInfo.tokenOrder);
-        return {
-            symbols: preprocIncInfo.symbols,
-            postTokens: postTokensInfo[0],
-            tokenOrder: postTokensInfo[1],
-            includes: preprocIncInfo.includes
-        };
+        try {
+            let preprocIncInfo: PreprocIncInfo = this._parseInc(document, includeFilePaths, includeCache, macroInfo, new Set(), text);
+            let postTokensInfo: [PostToken[], [string, number][]] = this._getAllPostTokens(this._filePath, this._preprocIncInfo.postTokens, this._preprocIncInfo.tokenOrder);
+            return {
+                symbols: preprocIncInfo.symbols,
+                postTokens: postTokensInfo[0],
+                tokenOrder: postTokensInfo[1],
+                includes: preprocIncInfo.includes
+            };
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return {
+                symbols: [],
+                postTokens : [],
+                tokenOrder: [],
+                includes: new Set<string>()
+            };
+        }
     }
 
     private static macroInfoToJSON(macroInfo: MacroInfo): MacroInfoJSON {
@@ -967,24 +982,41 @@ export class SystemVerilogPreprocessor {
     }
 
     public static preprocIncInfoToJSON(preprocIncInfo: PreprocIncInfo): PreprocIncInfoJSON {
-        return [
-            preprocIncInfo.symbols == undefined ? undefined : preprocIncInfo.symbols.map(s => s.toJSON()),
-            preprocIncInfo.postTokens,
-            preprocIncInfo.tokenOrder,
-            preprocIncInfo.macroChanges == undefined ? undefined : preprocIncInfo.macroChanges.map(m => [m.action, m.macroName, SystemVerilogPreprocessor.macroInfoToJSON(m.macroInfo)]),
-            preprocIncInfo.macroChangeOrder,
-            preprocIncInfo.includes == undefined ? undefined : [...preprocIncInfo.includes]
-        ];
+        try {
+            return [
+                preprocIncInfo.symbols == undefined ? undefined : preprocIncInfo.symbols.map(s => s.toJSON()),
+                preprocIncInfo.postTokens,
+                preprocIncInfo.tokenOrder,
+                preprocIncInfo.macroChanges == undefined ? undefined : preprocIncInfo.macroChanges.map(m => [m.action, m.macroName, SystemVerilogPreprocessor.macroInfoToJSON(m.macroInfo)]),
+                preprocIncInfo.macroChangeOrder,
+                preprocIncInfo.includes == undefined ? undefined : [...preprocIncInfo.includes]
+            ];
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return [[], [], [], [], [], []];
+        }
     }
 
     public static preprocIncInfoFromJSON(fileUri: string, preprocIncInfoJSON: PreprocIncInfoJSON): PreprocIncInfo {
-        return {
-            symbols: preprocIncInfoJSON[0] == undefined ? undefined : preprocIncInfoJSON[0].map(s => SystemVerilogSymbol.fromJSON(fileUri, s)),
-            postTokens: preprocIncInfoJSON[1],
-            tokenOrder: preprocIncInfoJSON[2],
-            macroChanges: preprocIncInfoJSON[3] == undefined ? undefined : preprocIncInfoJSON[3].map(m => { return {action: m[0], macroName: m[1], macroInfo: SystemVerilogPreprocessor.macroInfoFromJSON(m[2])}; }),
-            macroChangeOrder: preprocIncInfoJSON[4],
-            includes: preprocIncInfoJSON[5] == undefined ? undefined : new Set(preprocIncInfoJSON[5])
-        };
+        try {
+            return {
+                symbols: preprocIncInfoJSON[0] == undefined ? undefined : preprocIncInfoJSON[0].map(s => SystemVerilogSymbol.fromJSON(fileUri, s)),
+                postTokens: preprocIncInfoJSON[1],
+                tokenOrder: preprocIncInfoJSON[2],
+                macroChanges: preprocIncInfoJSON[3] == undefined ? undefined : preprocIncInfoJSON[3].map(m => { return {action: m[0], macroName: m[1], macroInfo: SystemVerilogPreprocessor.macroInfoFromJSON(m[2])}; }),
+                macroChangeOrder: preprocIncInfoJSON[4],
+                includes: preprocIncInfoJSON[5] == undefined ? undefined : new Set(preprocIncInfoJSON[5])
+            };
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return {
+                symbols: [],
+                postTokens: [],
+                tokenOrder: [],
+                macroChanges: [],
+                macroChangeOrder: [],
+                includes: new Set<string>()
+            };
+        }
     }
 }

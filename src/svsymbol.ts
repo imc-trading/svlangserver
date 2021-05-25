@@ -88,94 +88,120 @@ export class SystemVerilogSymbol {
     }
 
     public toJSON(): SystemVerilogSymbolJSON {
-        return [
-            this.name,
-            SystemVerilogSymbol._defLocationsToJSON(this.defLocations),
-            SystemVerilogSymbol._symLocationToJSON(this.symLocation),
-            this.containers,
-            this.type
-        ];
+        try {
+            return [
+                this.name,
+                SystemVerilogSymbol._defLocationsToJSON(this.defLocations),
+                SystemVerilogSymbol._symLocationToJSON(this.symLocation),
+                this.containers,
+                this.type
+            ];
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return [
+                this.name,
+                [[undefined, undefined], [undefined, undefined]],
+                [[undefined, undefined], [undefined, undefined]],
+                this.containers,
+                this.type
+            ];
+        }
     }
 
     static fromJSON(uri: string, jsonSymbol: SystemVerilogSymbolJSON): SystemVerilogSymbol {
-        let defLocations: DefinitionLocations;
-        if (SystemVerilogSymbol._isRangeJSON(jsonSymbol[1])) {
-            defLocations = SystemVerilogSymbol._toRange(<RangeJSON>(jsonSymbol[1]));
-        }
-        else {
-            defLocations = [];
-            for (let defLocationJSON of jsonSymbol[1]) {
-                if (typeof defLocationJSON === "string") {
-                    defLocations.push(defLocationJSON);
-                }
-                else {
-                    defLocations.push(SystemVerilogSymbol._toRange(<RangeJSON>(defLocationJSON)));
+        try {
+            let defLocations: DefinitionLocations;
+            if (SystemVerilogSymbol._isRangeJSON(jsonSymbol[1])) {
+                defLocations = SystemVerilogSymbol._toRange(<RangeJSON>(jsonSymbol[1]));
+            }
+            else {
+                defLocations = [];
+                for (let defLocationJSON of jsonSymbol[1]) {
+                    if (typeof defLocationJSON === "string") {
+                        defLocations.push(defLocationJSON);
+                    }
+                    else {
+                        defLocations.push(SystemVerilogSymbol._toRange(<RangeJSON>(defLocationJSON)));
+                    }
                 }
             }
-        }
 
-        let symLocation: SymbolLocation;
-        if (typeof jsonSymbol[2] === "number") {
-            symLocation = jsonSymbol[2];
-        }
-        else if (SystemVerilogSymbol._isRangeJSON(jsonSymbol[2])) {
-            symLocation = SystemVerilogSymbol._toRange(<RangeJSON>(jsonSymbol[2]));
-        }
-        else {
-            symLocation = [<string>(jsonSymbol[2][0]), SystemVerilogSymbol._toRange(<RangeJSON>(jsonSymbol[2][1]))];
-        }
+            let symLocation: SymbolLocation;
+            if (typeof jsonSymbol[2] === "number") {
+                symLocation = jsonSymbol[2];
+            }
+            else if (SystemVerilogSymbol._isRangeJSON(jsonSymbol[2])) {
+                symLocation = SystemVerilogSymbol._toRange(<RangeJSON>(jsonSymbol[2]));
+            }
+            else {
+                symLocation = [<string>(jsonSymbol[2][0]), SystemVerilogSymbol._toRange(<RangeJSON>(jsonSymbol[2][1]))];
+            }
 
-        return new SystemVerilogSymbol(
-            jsonSymbol[0],
-            defLocations,
-            symLocation,
-            jsonSymbol[3],
-            jsonSymbol[4]
-        );
+            return new SystemVerilogSymbol(
+                jsonSymbol[0],
+                defLocations,
+                symLocation,
+                jsonSymbol[3],
+                jsonSymbol[4]
+            );
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return undefined;
+        }
     }
 
     public getSymbolLocation(uri: string): Location {
-        let symRange: Range;
-        let symURI: string = uri;
-        if (typeof this.symLocation === "number") {
-            if (!Array.isArray(this.defLocations)) {
-                ConnectionLogger.error(`Invalid symbol location (number) when defLocations is not an array`);
+        try {
+            let symRange: Range;
+            let symURI: string = uri;
+            if (typeof this.symLocation === "number") {
+                if (!Array.isArray(this.defLocations)) {
+                    ConnectionLogger.error(`Invalid symbol location (number) when defLocations is not an array`);
+                }
+                let l: number = 0;
+                for (let i = 0; i < (<Array<string|Range>>(this.defLocations)).length; i++) {
+                    if (typeof this.defLocations[i] === "string") {
+                        symURI = this.defLocations[i];
+                    }
+                    else if (l == this.symLocation) {
+                        symRange = this.defLocations[i];
+                        break;
+                    }
+                    else {
+                        l++;
+                    }
+                }
             }
-            let l: number = 0;
-            for (let i = 0; i < (<Array<string|Range>>(this.defLocations)).length; i++) {
-                if (typeof this.defLocations[i] === "string") {
-                    symURI = this.defLocations[i];
-                }
-                else if (l == this.symLocation) {
-                    symRange = this.defLocations[i];
-                    break;
-                }
-                else {
-                    l++;
-                }
+            else if (Array.isArray(this.symLocation)) {
+                symURI = this.symLocation[0];
+                symRange = this.symLocation[1];
             }
-        }
-        else if (Array.isArray(this.symLocation)) {
-            symURI = this.symLocation[0];
-            symRange = this.symLocation[1];
-        }
-        else {
-            symRange = this.symLocation;
-        }
+            else {
+                symRange = this.symLocation;
+            }
 
-        return Location.create(symURI, symRange);
+            return Location.create(symURI, symRange);
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return undefined;
+        }
     }
 
     public toSymbolInformation(uri: string): SymbolInformation {
-        let symLocation: Location = this.getSymbolLocation(uri);
+        try {
+            let symLocation: Location = this.getSymbolLocation(uri);
 
-        return SymbolInformation.create(
-            this.name,
-            getSymbolKind(this.type),
-            symLocation.range,
-            symLocation.uri,
-            this.containers.length > 0 ? this.containers[this.containers.length - 1] : undefined
-        );
+            return SymbolInformation.create(
+                this.name,
+                getSymbolKind(this.type),
+                symLocation.range,
+                symLocation.uri,
+                this.containers.length > 0 ? this.containers[this.containers.length - 1] : undefined
+            );
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return undefined;
+        }
     }
 
     public overwrite(symbol: SystemVerilogSymbol) {
@@ -191,30 +217,35 @@ export class SystemVerilogSymbol {
     }
 
     public static getDefinitions(uri: string, symbols: SystemVerilogSymbol[]): string[] {
-        let documentMap: Map<string, TextDocument> = new Map();
-        let currDocument: TextDocument;
-        let definitions: string[] = [];
-        for (let symbol of symbols) {
-            let defLocations: Array<string|Range> = Array.isArray(symbol.defLocations) ? (<Array<string|Range>>[uri]).concat(<Array<string|Range>>(symbol.defLocations)) : [uri, <Range>(symbol.defLocations)];
-            let definition: string = "";
-            for (let i = 0; i < defLocations.length; i++) {
-                if (typeof defLocations[i] === "string") {
-                    if (documentMap.has(<string>(defLocations[i]))) {
-                        currDocument = documentMap.get(<string>(defLocations[i]));
+        try {
+            let documentMap: Map<string, TextDocument> = new Map();
+            let currDocument: TextDocument;
+            let definitions: string[] = [];
+            for (let symbol of symbols) {
+                let defLocations: Array<string|Range> = Array.isArray(symbol.defLocations) ? (<Array<string|Range>>[uri]).concat(<Array<string|Range>>(symbol.defLocations)) : [uri, <Range>(symbol.defLocations)];
+                let definition: string = "";
+                for (let i = 0; i < defLocations.length; i++) {
+                    if (typeof defLocations[i] === "string") {
+                        if (documentMap.has(<string>(defLocations[i]))) {
+                            currDocument = documentMap.get(<string>(defLocations[i]));
+                        }
+                        else {
+                            let data = fsReadFileSync(uriToPath(<string>(defLocations[i])));
+                            currDocument = TextDocument.create(<string>(defLocations[i]), "SystemVerilog", 0, data.toString());
+                            documentMap.set(<string>(defLocations[i]), currDocument);
+                        }
                     }
                     else {
-                        let data = fsReadFileSync(uriToPath(<string>(defLocations[i])));
-                        currDocument = TextDocument.create(<string>(defLocations[i]), "SystemVerilog", 0, data.toString());
-                        documentMap.set(<string>(defLocations[i]), currDocument);
+                        definition = definition.concat(currDocument.getText(<Range>(defLocations[i])));
                     }
                 }
-                else {
-                    definition = definition.concat(currDocument.getText(<Range>(defLocations[i])));
-                }
+                definitions.push(definition);
             }
-            definitions.push(definition);
+            return definitions;
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return [];
         }
-        return definitions;
     }
 }
 

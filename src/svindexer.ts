@@ -603,7 +603,7 @@ export class SystemVerilogIndexer {
             return;
         }
         this._indexIsSaveable = false;
-        return fsWriteFileSync(this.getIndexFile(), this._indexToCache());
+        fsWriteFileSync(this.getIndexFile(), this._indexToCache());
     }
 
     getDocumentSystemVerilogSymbols(documentUri: string, strict: Boolean = true) : SystemVerilogSymbol[] {

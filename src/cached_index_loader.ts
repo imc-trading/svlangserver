@@ -4,9 +4,16 @@ import {
     fsExists
 } from './genutils';
 
-let done: Boolean = false;
+let waitForDoneAck: Boolean = false;
+
+function handleError(error) {
+    ConnectionLogger.log(error);
+    waitForDoneAck = true;
+    process.send([]);
+}
+
 process.on('message', (index_file) => {
-    if (done) {
+    if (waitForDoneAck) {
         process.exit();
     }
     else {
@@ -16,16 +23,14 @@ process.on('message', (index_file) => {
                     return fsReadFile(index_file);
                 })
                 .then((data) => {
-                    done = true;
+                    waitForDoneAck = true;
                     process.send(JSON.parse(data));
                 })
-                .catch((err) => {
-                    done = true;
-                    process.send([]);
+                .catch((error) => {
+                    handleError(error);
                 });
         } catch (error) {
-            ConnectionLogger.log(error);
-            process.send([]);
+            handleError(error);
         }
     }
 });
