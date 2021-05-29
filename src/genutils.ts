@@ -50,8 +50,13 @@ export function resolvedPath(file: string): string {
     return path.resolve(__dirname, file);
 }
 
-export function getTmpFileSync(): string {
-    return tmp.tmpNameSync();
+export function getTmpDirSync() {
+    try {
+        return tmp.dirSync({unsafeCleanup: true});
+    } catch (error) {
+        ConnectionLogger.error(error);
+        return undefined;
+    }
 }
 
 export function isStringListEqual(stringList1: string[], stringList2: string[]): Boolean {

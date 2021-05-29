@@ -6,24 +6,36 @@ import {
 } from "vscode-languageserver";
 
 import {
+    SystemVerilogIndexer
+} from "./svindexer";
+
+import {
     ConnectionLogger,
     fsWriteFileSync,
     fsUnlinkSync,
-    getTmpFileSync
+    getTmpDirSync
 } from "./genutils";
 
 import * as child from 'child_process';
+const path = require('path');
 
 type TimerType = ReturnType<typeof setTimeout>;
 
 export class VerilatorDiagnostics {
+    private _indexer: SystemVerilogIndexer;
     private _command: string = "";
     private _defines: string[] = [];
     private _optionsFile: string = "";
     private _alreadyRunning: Map<string, [child.ChildProcess, [Boolean]]> = new Map();
     private _fileWaiting: Map<string, [TimerType, any]> = new Map();
-    private _tmpFilesNotInUse: string[] = [];
-    private _allTmpFiles: string[] = [];
+    private _tmpDir;
+    private _freeTmpFileNums: number[] = [];
+    private _totalTmpFileNums: number = 0;
+
+    constructor(indexer: SystemVerilogIndexer) {
+        this._indexer = indexer;
+        this._tmpDir = getTmpDirSync();
+    }
 
     public setCommand(cmd: string) {
         this._command = cmd;
@@ -37,21 +49,18 @@ export class VerilatorDiagnostics {
         this._defines = defines || [];
     }
 
-    private _getTmpFile(): string {
-        if (this._tmpFilesNotInUse.length <= 0) {
-            let tmpFile: string = getTmpFileSync();
-            this._allTmpFiles.push(tmpFile);
-            return tmpFile;
+    private _getFreeTmpFileNum(): number {
+        if (this._freeTmpFileNums.length <= 0) {
+            this._freeTmpFileNums.push(this._totalTmpFileNums++);
         }
-
-        return this._tmpFilesNotInUse.shift();
+        return this._freeTmpFileNums.shift();
     }
 
     private _lintImmediate(file: string, text?: string): Promise<Diagnostic[]> {
         let _kill = () => {
             let [proc, statusRef] = this._alreadyRunning.get(file);
-            proc.kill();
             statusRef[0] = false;
+            proc.kill();
         };
 
         if (this._alreadyRunning.has(file)) {
@@ -59,7 +68,9 @@ export class VerilatorDiagnostics {
             _kill();
         }
         return new Promise((resolve) => {
-            let actFile: string = text == undefined ? file : this._getTmpFile();
+            let actFile: string = text == undefined ? file : path.join(this._tmpDir.name, "sources", file);
+            let optionsFile: string = this._optionsFile;
+            let vcTmpFileNum: number;
             if (text != undefined) {
                 fsWriteFileSync(actFile, text);
 
@@ -68,16 +79,34 @@ export class VerilatorDiagnostics {
                     //ConnectionLogger.log(`DEBUG: Killing already running command to start a new one`);
                     _kill();
                 }
+
+                if (this._indexer.fileHasPkg(file)) {
+                    let vcFileContent: string = this._indexer.getOptionsFileContent()
+                                                                .map(line => { return (line == file) ? actFile : line; })
+                                                                .join('\n');
+                    vcTmpFileNum = this._getFreeTmpFileNum();
+                    let tmpVcFile: string = path.join(this._tmpDir.name, "vcfiles", `lint${vcTmpFileNum}.vc`);
+                    fsWriteFileSync(tmpVcFile, vcFileContent);
+                    optionsFile = tmpVcFile;
+
+                    // if file write takes too long and another process started in the interim
+                    if (this._alreadyRunning.has(file)) {
+                        //ConnectionLogger.log(`DEBUG: Killing already running command to start a new one`);
+                        _kill();
+                    }
+                }
             }
 
-            let defineArgs: string = this._defines.length > 0 ? this._defines.map(d => ` +define+${d}`).join('') : "";
-            let command: string = this._command + defineArgs +  (this._optionsFile ? ' -f ' + this._optionsFile : "") + " " + actFile;
+            let definesArg: string = this._defines.length > 0 ? this._defines.map(d => ` +define+${d}`).join('') : "";
+            let optionsFileArg: string = optionsFile ? ' -f ' + optionsFile : "";
+            let actFileArg: string = (this._indexer.fileHasPkg(file)) ? "" : " " + actFile;
+            let command: string = this._command + definesArg + optionsFileArg + actFileArg;
             let statusRef: [Boolean] = [true];
             //ConnectionLogger.log(`DEBUG: verilator command ${command}`);
             this._alreadyRunning.set(file, [
                 child.exec(command, (error, stdout, stderr) => {
-                    if (text != undefined) {
-                        this._tmpFilesNotInUse.push(actFile);
+                    if (optionsFile != this._optionsFile) {
+                        this._freeTmpFileNums.push(vcTmpFileNum);
                     }
                     if (statusRef[0]) {
                         this._alreadyRunning.delete(file);
@@ -126,9 +155,6 @@ export class VerilatorDiagnostics {
                 line = line.substr(1)
 
                 if (line.search("Unsupported: Interfaced port on top level module") > 0) {
-                    return;
-                }
-                else if (line.search(/Filename .* does not match MODULE name/) > 0) {
                     return;
                 }
 
@@ -191,7 +217,6 @@ export class VerilatorDiagnostics {
     }
 
     public cleanupTmpFiles() {
-        this._allTmpFiles.forEach(file => fsUnlinkSync(file));
-        this._allTmpFiles = [];
+        this._tmpDir.removeCallBack();
     }
 }

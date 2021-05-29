@@ -88,6 +88,7 @@ export class SystemVerilogIndexer {
     private _completionGrammarEngine: GrammarEngine = new GrammarEngine(svcompletion_grammar, "meta.invalid.systemverilog");
     private _filesCompletionInfo: Map<string, {tokens: GrammarToken[]}> = new Map();
     private _userDefines: [string, string, GrammarToken[]][] = [];
+    private _optionsFileContent: string[] = [];
 
     public NUM_FILES: number = 250;
     public mostRecentSymbols: SymbolInformation[] = [];
@@ -397,17 +398,25 @@ export class SystemVerilogIndexer {
     }
 
     private _generateVerilatorOptionsFile() {
-        let optionsFileContent: string = "";
+        this._optionsFileContent = [];
         for (let [file, rank] of [...[...this._indexedFilesInfo.entries()].filter(a => a[1].pkgdeps != null)].sort((a, b) => a[1].rank <= b[1].rank ? 1 : -1)) {
-            optionsFileContent += file + '\n';
+            this._optionsFileContent.push(file);
         }
         for (let incdir of [...new Set(this._srcFiles.map(file => path.dirname(file))), ...new Set(this._srcFiles.map(file => path.dirname(file)))]) {
-            optionsFileContent += '+incdir+' + incdir + '\n';
+            this._optionsFileContent.push('+incdir+' + incdir);
         }
-        fsWriteFile(this.getVerilatorOptionsFile(), optionsFileContent)
+        fsWriteFile(this.getVerilatorOptionsFile(), this._optionsFileContent.join('\n'))
             .catch(error => {
                 ConnectionLogger.error(error);
             });
+    }
+
+    public getOptionsFileContent(): string[] {
+        return this._optionsFileContent;
+    }
+
+    public fileHasPkg(file: string): boolean {
+        return this._indexedFilesInfo.has(file) && (this._indexedFilesInfo.get(file).pkgdeps != null);
     }
 
     public processDocumentChanges(document: TextDocument) {
