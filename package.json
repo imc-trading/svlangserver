@@ -8,7 +8,7 @@
         "language",
         "server"
     ],
-    "version": "0.3.3",
+    "version": "0.3.4",
     "author": "Kanad Kanhere",
     "publisher": "IMCTradingBV",
     "license": "MIT",
@@ -234,7 +234,8 @@
         "watch": "tsc --watch -p ."
     },
     "files": [
-        "/lib",
-        "/bin"
+        "/lib/*.js",
+        "/lib/*.d.ts",
+        "/bin/*.js"
     ]
 }

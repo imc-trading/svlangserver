@@ -41,28 +41,30 @@ The code has been tested to work with below tool versions
   * `npm install -g @imc-trading/svlangserver`
   * Update .emacs/init.el
 
-NOTE: This has been tested with npm version 6.14.11
+To get the snippets, git clone this repo and copy the snippets directory wherever applicable
+
+NOTE: This has been tested with npm version 6.14.11 and node version 14.15.5
 
 ## Settings
 - `systemverilog.includeIndexing`: _Array_, Globs defining files to be indexed
-- `systemverilog.excludeIndexing`: _String_, Exclude files from indexing based on glob
-- `systemverilog.launchConfiguration`: _String_, Command to run when launching verilator
+- `systemverilog.excludeIndexing`: _Array_, Exclude files from indexing based on glob
+- `systemverilog.launchConfiguration`: _String_, Command to run for launching verilator linting
   * Default: _verilator --sv --lint-only --Wall_
   * If not in path, replace _verilator_ with the appropriate command
 - `systemverilog.lintOnUnsaved`: _Boolean_, Lint even unsaved files
   * Default: *true*
-- `systemverilog.defines`: Defines for the project. Used by the language server as well as verilator linting
+- `systemverilog.defines`: _Array_, Defines for the project. Used by the language server as well as verilator linting
   * Default: empty
-- `systemverilog.formatCommand`: verible-verilog-format command for code formatting
+- `systemverilog.formatCommand`: _String_, verible-verilog-format command for code formatting
   * Default: _verible-verilog-format_
   * If not in path, replace _verible-verilog-format_ with the appropriate command
-- `systemverilog.disableCompletionProvider`: Disable auto completion provided by the language server
+- `systemverilog.disableCompletionProvider`: _Boolean_, Disable auto completion provided by the language server
   * Default: false
-- `systemverilog.disableHoverProvider`: Disable hover over help provided by the language server
+- `systemverilog.disableHoverProvider`: _Boolean_, Disable hover over help provided by the language server
   * Default: false
-- `systemverilog.disableSignatureHelpProvider`: Disable signature help provided by the language server
+- `systemverilog.disableSignatureHelpProvider`: _Boolean_, Disable signature help provided by the language server
   * Default: false
-- `systemverilog.disableLinting`: Disable verilator linting
+- `systemverilog.disableLinting`: _Boolean_, Disable verilator linting
   * Default: false
 - Example coc.nvim settings file
     ```json
@@ -160,7 +162,7 @@ NOTE: This has been tested with npm version 6.14.11
 
 ## Troubleshooting
 - Editor is not able to find language server binary.
-    * Make sure the binary is in the system path as exposed to the editor. If the binary is installed in custom directory, expost that path to your editor
+    * Make sure the binary is in the system path as exposed to the editor. If the binary is installed in custom directory, expose that path to your editor
 - Not getting any diagnostics
     * Make sure the launchConfiguration setting has been properly set to use verilator from the correct installation path
 - Check settings used by the language server
@@ -181,6 +183,9 @@ Although most of the code is written from scratch, this [VSCode-SystemVerilog ex
 
 ## Release Notes
 See the [changelog](CHANGELOG.md) for more details
+
+### 0.3.4
+- Bug fixes
 
 ### 0.3.3
 - Updated instructions to use published packages
