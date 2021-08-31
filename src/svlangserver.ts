@@ -197,10 +197,12 @@ function updateSettings(change, forceUpdate: Boolean = false) {
     let definesChanged: Boolean = forceUpdate || !isStringListEqual(oldSettings.get("systemverilog.defines"), settings.get("systemverilog.defines"))
     if (forceUpdate || definesChanged ||
         !isStringListEqual(oldSettings.get("systemverilog.includeIndexing"), settings.get("systemverilog.includeIndexing")) ||
+        !isStringListEqual(oldSettings.get("systemverilog.libraryIndexing"), settings.get("systemverilog.libraryIndexing")) ||
         !isStringListEqual(oldSettings.get("systemverilog.excludeIndexing"), settings.get("systemverilog.excludeIndexing"))) {
         if (definesChanged) {
             svindexer.setDefines(settings.get("systemverilog.defines"));
         }
+        svindexer.setLibraries(settings.get("systemverilog.libraryIndexing"), settings.get("systemverilog.excludeIndexing"));
         svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.excludeIndexing"));
     }
 
@@ -358,6 +360,7 @@ connection.onSignatureHelp((textDocumentPosition: TextDocumentPositionParams): S
 connection.onExecuteCommand((commandParams) => {
     try {
         if (commandParams.command == BuildIndexCommand) {
+            svindexer.setLibraries(settings.get("systemverilog.libraryIndexing"), settings.get("systemverilog.excludeIndexing"));
             svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.excludeIndexing"));
         }
         else {

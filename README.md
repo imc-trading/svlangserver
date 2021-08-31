@@ -47,6 +47,7 @@ NOTE: This has been tested with npm version 6.14.11 and node version 14.15.5
 
 ## Settings
 - `systemverilog.includeIndexing`: _Array_, Globs defining files to be indexed
+- `systemverilog.libraryIndexing`: _Array_, Globs defining library files to be added to verilator linting. It's useful when module name is not equal to filename.
 - `systemverilog.excludeIndexing`: _Array_, Exclude files from indexing based on glob
 - `systemverilog.launchConfiguration`: _String_, Command to run for launching verilator linting
   * Default: _verilator --sv --lint-only --Wall_

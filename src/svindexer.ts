@@ -75,6 +75,7 @@ export class SystemVerilogIndexer {
     private _rootPath: string | null;
     private _clientDir: string | null;
     private _srcFiles: string[];
+    private _libFiles: string[];
     private _preprocCache: Map<string, [string, PreprocIncInfo, TextDocument]> = new Map();
     private _indexedFilesInfo: Map<string, IndexFileInfo> = new Map();
     private _pkgToFiles: Map<string, Set<string>> = new Map();
@@ -115,6 +116,27 @@ export class SystemVerilogIndexer {
 
     setDefines(defines: string[]) {
         this._userDefines = defines.map(s => s.split("=", 2)).map(s => [s[0], s[1], s[1] == undefined ? [] : SystemVerilogPreprocessor.tokenize(s[1])]);
+    }
+
+    setLibraries(libraries: string[], excludes: string[]) {
+        let _indexGlob = (func) => {
+            const pattern = libraries.length == 1 ? libraries[0] : '{' + libraries.join(",") + '}';
+            glob(pattern, {cwd: this._rootPath, ignore: excludes, follow: true, realpath: true}, func);
+        };
+        _indexGlob((err, files) => {
+            if (err) {
+                ConnectionLogger.error(err);
+            }
+            else if (files.length > 0) {
+                if (!genutils_1.isStringListEqual(files, this._libFiles)) {
+                    this._libFiles = files;
+                }
+            }
+            else {
+                ConnectionLogger.log("Library file is not found");
+                this._libFiles = [];
+            }
+        });
     }
 
     _waitForHalt(retryCount: number = 0): Promise<void> {
@@ -401,6 +423,9 @@ export class SystemVerilogIndexer {
         this._optionsFileContent = [];
         for (let [file, rank] of [...[...this._indexedFilesInfo.entries()].filter(a => a[1].pkgdeps != null)].sort((a, b) => a[1].rank <= b[1].rank ? 1 : -1)) {
             this._optionsFileContent.push(file);
+        }
+        for (let libfile of [...new Set(this._libFiles.values())]) {
+            this._optionsFileContent.push('-v ' + libfile);
         }
         for (let incdir of [...new Set(this._srcFiles.map(file => path.dirname(file))), ...new Set(this._srcFiles.map(file => path.dirname(file)))]) {
             this._optionsFileContent.push('+incdir+' + incdir);
