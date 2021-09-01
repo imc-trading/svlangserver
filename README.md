@@ -166,6 +166,9 @@ NOTE: This has been tested with npm version 6.14.11 and node version 14.15.5
     * Make sure the binary is in the system path as exposed to the editor. If the binary is installed in custom directory, expose that path to your editor
 - Not getting any diagnostics
     * Make sure the launchConfiguration setting has been properly set to use verilator from the correct installation path
+- Diagnostics show _Cannot find file containing module 'module_name'_
+    * Make sure all submodules can be found by includeIndexing
+    * If the issue still remains, it may due to different naming of module and file, or a file containing multiple modules. Make sure these files can be found by libraryIndexing.
 - Check settings used by the language server
     * for coc.nvim: Use the command `:CocCommand workspace.showOutput` and then select svlangserver
     * for vscode: Check the SVLangServer output channel

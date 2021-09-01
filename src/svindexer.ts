@@ -128,12 +128,12 @@ export class SystemVerilogIndexer {
                 ConnectionLogger.error(err);
             }
             else if (files.length > 0) {
-                if (!genutils_1.isStringListEqual(files, this._libFiles)) {
+                if (!isStringListEqual(files, this._libFiles)) {
                     this._libFiles = files;
                 }
             }
             else {
-                ConnectionLogger.log("Library file is not found");
+                ConnectionLogger.log("No library files found");
                 this._libFiles = [];
             }
         });
