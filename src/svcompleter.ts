@@ -577,7 +577,7 @@ const sv_completion_keywords: string[][] = [
 let sv_completion_keyword_items = [];
 for (let n = 0; n < sv_completion_keywords.length; n++) {
     sv_completion_keyword_items.push({
-        label: sv_completion_tick[n][0],
+        label: sv_completion_keywords[n][0],
         kind: CompletionItemKind.Text,
         data: "constant.other.define.systemverilog"
     });
