@@ -229,6 +229,6 @@ export class VerilatorDiagnostics {
     }
 
     public cleanupTmpFiles() {
-        this._tmpDir.removeCallBack();
+        this._tmpDir.removeCallback();
     }
 }
