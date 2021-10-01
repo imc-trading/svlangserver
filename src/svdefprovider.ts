@@ -140,13 +140,27 @@ export class SystemVerilogDefinitionProvider {
         let isRoutine: Boolean;
         [containerName, isRoutine] = this._findNamedArg(tokenNum, svtokens);
         if ((containerName == undefined) || (isRoutine == undefined)) {
+            let symText: string = svtokens[tokenNum].text;
+            if (scope.startsWith("identifier.scoped.")) {
+                let endPos: number = document.offsetAt(position) - svtokens[tokenNum].index;
+                endPos = svtokens[tokenNum].text.indexOf("::", endPos > 0 ? endPos - 1 : 0);
+                endPos = endPos < 0 ? svtokens[tokenNum].text.length : endPos;
+                symText = svtokens[tokenNum].text.slice(0, endPos);
+                symText = symText.replace(/::\*$/, '');
+                if (symText == "*") {
+                    return [undefined, undefined];
+                }
+                else if (symText.indexOf("::") < 0) {
+                    return this._indexer.getPackageSymbol(symText);
+                }
+            }
             let filePath: string;
             let symbol: SystemVerilogSymbol;
-            [filePath, symbol] = this._indexer.findSymbol(document.uri, svtokens[tokenNum].text);
+            [filePath, symbol] = this._indexer.findSymbol(document.uri, symText);
             if ((filePath == undefined) || (symbol == undefined)) {
                 symbol = this._indexer.getContainerSymbol(svtokens[tokenNum].text);
                 if (symbol == undefined) {
-                    return [undefined, undefined];
+                    return this._indexer.getPackageSymbol(svtokens[tokenNum].text);
                 }
 
                 filePath = this._indexer.getInstFilePath(svtokens[tokenNum].text);

@@ -931,7 +931,7 @@ export class SystemVerilogIndexer {
         return result;
     }
 
-    private _getContainerSymbol(cntnrToFiles: Map<string, Set<string>>, cntnrName: string): SystemVerilogSymbol {
+    private _getContainerSymbol(cntnrToFiles: Map<string, Set<string>>, cntnrName: string): [string, SystemVerilogSymbol] {
         if (cntnrToFiles.has(cntnrName)) {
             for (let file of cntnrToFiles.get(cntnrName)) {
                 if (!this._indexedFilesInfo.has(file)) {
@@ -940,20 +940,27 @@ export class SystemVerilogIndexer {
 
                 for (let symbol of SystemVerilogParser.fileContainerSymbols(this._indexedFilesInfo.get(file).symbolsInfo)) {
                     if (symbol.name == cntnrName) {
-                        return symbol;
+                        return [file, symbol];
                     }
                 }
             }
         }
-        return undefined;
+        return [undefined, undefined];
     }
 
     public getContainerSymbol(cntnrName: string): SystemVerilogSymbol {
-        let result: SystemVerilogSymbol = this._getContainerSymbol(this._moduleToFiles, cntnrName);
+        let result: SystemVerilogSymbol = this._getContainerSymbol(this._moduleToFiles, cntnrName)[1];
         if (result == undefined) {
-            result = this._getContainerSymbol(this._interfaceToFiles, cntnrName);
+            result = this._getContainerSymbol(this._interfaceToFiles, cntnrName)[1];
         }
         return result;
+    }
+
+    public getPackageSymbol(pkgName: string): [string, SystemVerilogSymbol] {
+        let sym: SystemVerilogSymbol;
+        let filePath: string;
+        [filePath, sym] = this._getContainerSymbol(this._pkgToFiles, pkgName);
+        return [filePath, sym];
     }
 
     private _findSymbol(uri: string, symbolName: string, findContainer: Boolean): [string, SystemVerilogSymbol, SystemVerilogParser.SystemVerilogContainerSymbolsInfo[]] {
