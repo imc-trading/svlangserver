@@ -21,6 +21,8 @@ import {
     SystemVerilogSymbolJSON
 } from "./svsymbol";
 
+import * as path from 'path';
+
 enum MacroAction {
     Add,
     Del,
@@ -634,7 +636,7 @@ export class SystemVerilogPreprocessor {
             }
             else {
                 for (let incFilePath of this._includeFilePaths) {
-                    if (incFilePath.endsWith(fileName)) {
+                    if (incFilePath.endsWith(path.sep + fileName)) {
                         includeFilePath = incFilePath;
                         break;
                     }
@@ -652,6 +654,14 @@ export class SystemVerilogPreprocessor {
                             let data = fsReadFileSync(includeFilePath);
                             let document: TextDocument = TextDocument.create(pathToUri(includeFilePath), "SystemVerilog", 0, data.toString());
                             preprocIncInfo = (new SystemVerilogPreprocessor())._parseInc(document, this._includeFilePaths, this._includeCache, this._macroInfo, this._fileList);
+                            let incFileSymbol: SystemVerilogSymbol = new SystemVerilogSymbol(
+                                includeFilePath,
+                                Range.create(0, 0, 0, 0),
+                                Range.create(0, 0, 0, 0),
+                                ["source.systemverilog"],
+                                ["includefile"]
+                            );
+                            preprocIncInfo.symbols.unshift(incFileSymbol);
                             this._includeCache.set(fileName, [includeFilePath, preprocIncInfo, document]);
                         }
                         catch (err) {

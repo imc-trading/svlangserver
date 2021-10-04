@@ -1417,4 +1417,17 @@ export class SystemVerilogIndexer {
     public getUserDefine(defNum: number): string {
         return this._userDefines[defNum].slice(0, 2).join('=');
     }
+
+    public getIncFilePathAndSymbol(filePath: string): [string, SystemVerilogSymbol] {
+        if (this._preprocCache.has(filePath)) {
+            let actFilePath: string;
+            let preprocIncInfo: PreprocIncInfo;
+            [actFilePath, preprocIncInfo,] = this._preprocCache.get(filePath);
+            let symbol: SystemVerilogSymbol = preprocIncInfo.symbols.find(s => s.type.indexOf("includefile") >= 0);
+            if (symbol) {
+                return [actFilePath, symbol];
+            }
+        }
+        return [undefined, undefined];
+    }
 }
