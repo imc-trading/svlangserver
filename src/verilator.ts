@@ -177,16 +177,26 @@ export class VerilatorDiagnostics {
                     line = line.replace(/\s+/g, ' ').trim();
 
                     let terms = this._splitTerms(line);
-                    let severity = this._getSeverity(terms[0]);
-                    let message = terms.slice(2).join(' ')
-                    let lineNum = parseInt(terms[1].trim()) - 1;
+                    if (terms == null) {
+                        ConnectionLogger.warn('Unexpected Verilator output format: ' + line);
+                        return;
+                    }
+
+                    let severity = this._getSeverity(terms[1]);
+                    let message = "";
+                    let lineNum = parseInt(terms[4]) - 1;
+                    let colNum = 0;
+                    if (terms[6]) {
+                        colNum = parseInt(terms[6]) - 1;
+                    }
+                    message = terms.slice(7).join(' ')
 
                     if (lineNum != NaN) {
-                        //ConnectionLogger.log(terms[1].trim() + ' ' + message);
+                        //ConnectionLogger.log(terms[4].trim() + ' ' + message);
 
                         diagnostics.push({
                             severity: severity,
-                            range: Range.create(lineNum, 0, lineNum, Number.MAX_VALUE),
+                            range: Range.create(lineNum, colNum, lineNum, Number.MAX_VALUE),
                             message: message,
                             code: 'verilator',
                             source: 'verilator'
@@ -200,17 +210,15 @@ export class VerilatorDiagnostics {
     }
 
     private _splitTerms(line: string): string[] {
-        let terms = line.split(':');
-
-        for (var i = 0; i < terms.length; i++) {
-            if (terms[i] == ' ') {
-                terms.splice(i, 1);
-                i--;
-            }
-            else {
-                terms[i] = terms[i].trim();
-            }
-        }
+        // RegExp expression for matching Verilog messages
+        // Group 1: Severity
+        // Group 2: Type (optional)
+        // Group 3: Filename (optional)
+        // Group 4: Line number
+        // Group 6: Column number (optional)
+        // Group 7: Message
+        const regex = /(Error|Warning)(-[A-Z0-9_]+)?: ([A-Za-z0-9\_\-\.]+)?:(\d+):((\d+):)? (.*)/i;
+        const terms = line.match(regex);
 
         return terms;
     }
