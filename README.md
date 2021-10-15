@@ -27,7 +27,13 @@ The code has been tested to work with below tool versions
 
 ## Installation
 - For coc.nvim
-  * `npm install -g @imc-trading/svlangserver`
+  * ~~`npm install -g @imc-trading/svlangserver`~~
+    ```bash
+    git clone git@github.com:raytroop/svlangserver.git
+    cd svlangserver
+    npm pack
+    npm install -g imc-trading-svlangserver-0.3.4.tgz
+    ```
   * Update .vim/coc-settings.json
 - For VSCode
   * Install the extension from the marketplace.
