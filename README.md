@@ -13,6 +13,7 @@ A language server for systemverilog that has been tested to work with coc.nvim, 
 - Code snippets for many common blocks
 - Code formatting with verible-verilog-format
 - Elaborate syntax highlighting (for VSCode)
+- Auto completion for UVM
 
 ## Versions
 The code has been tested to work with below tool versions
@@ -29,7 +30,8 @@ The code has been tested to work with below tool versions
 - For coc.nvim
   * ~~`npm install -g @imc-trading/svlangserver`~~
     ```bash
-    git clone git@github.com:raytroop/svlangserver.git
+    # pull the latest version which has not been pushed to npm registry
+    git clone git@github.com:imc-trading/svlangserver.git
     cd svlangserver
     npm pack
     npm install -g imc-trading-svlangserver-0.3.4.tgz
