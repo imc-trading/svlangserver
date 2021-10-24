@@ -22,6 +22,10 @@ const path = require('path');
 type TimerType = ReturnType<typeof setTimeout>;
 
 export class VerilatorDiagnostics {
+    private static readonly _whitelistedMessages: RegExp[] = [
+        /Unsupported: Interfaced port on top level module/i
+    ];
+
     private _indexer: SystemVerilogIndexer;
     private _command: string = "";
     private _defines: string[] = [];
@@ -160,64 +164,47 @@ export class VerilatorDiagnostics {
         let diagnostics: Diagnostic[] = [];
         let lines = stderr.split(/\r?\n/g);
 
+        // RegExp expression for matching Verilator messages
+        // Group 1: Severity
+        // Group 2: Type (optional)
+        // Group 3: Filename
+        // Group 4: Line number
+        // Group 5: Column number (optional)
+        // Group 6: Message
+        let regex: RegExp = new RegExp(String.raw`%(Error|Warning)(-[A-Z0-9_]+)?: (` + file.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&') + String.raw`):(\d+):(?:(\d+):)? (.*)`, 'i');
+
         // Parse output lines
         lines.forEach((line, i) => {
-            if (line.startsWith('%')) {
-                // remove the %
-                line = line.substr(1)
-
-                if (line.search("Unsupported: Interfaced port on top level module") > 0) {
-                    return;
+            let terms = line.match(regex);
+            if (terms != null) {
+                let severity = this._getSeverity(terms[1]);
+                let message = "";
+                let lineNum = parseInt(terms[4]) - 1;
+                let colNum = 0;
+                if (terms[5]) {
+                    colNum = parseInt(terms[5]) - 1;
                 }
+                message = terms[6];
 
-                // was it for a submodule
-                if (line.search(file) > 0) {
-                    // remove the filename
-                    line = line.replace(file, '');
-                    line = line.replace(/\s+/g, ' ').trim();
-
-                    let terms = this._splitTerms(line);
-                    if (terms == null) {
+                for (let whitelistedMessage of VerilatorDiagnostics._whitelistedMessages) {
+                    if (message.search(whitelistedMessage) >= 0) {
                         return;
                     }
+                }
 
-                    let severity = this._getSeverity(terms[1]);
-                    let message = "";
-                    let lineNum = parseInt(terms[4]) - 1;
-                    let colNum = 0;
-                    if (terms[5]) {
-                        colNum = parseInt(terms[5]) - 1;
-                    }
-                    message = terms.slice(6).join(' ')
-
-                    if (lineNum != NaN) {
-                        diagnostics.push({
-                            severity: severity,
-                            range: Range.create(lineNum, colNum, lineNum, Number.MAX_VALUE),
-                            message: message,
-                            code: 'verilator',
-                            source: 'verilator'
-                        });
-                    }
+                if ((lineNum != NaN) && (colNum != NaN)) {
+                    diagnostics.push({
+                        severity: severity,
+                        range: Range.create(lineNum, colNum, lineNum, Number.MAX_VALUE),
+                        message: message,
+                        code: 'verilator',
+                        source: 'verilator'
+                    });
                 }
             }
         });
 
         return diagnostics;
-    }
-
-    private _splitTerms(line: string): string[] {
-        // RegExp expression for matching Verilog messages
-        // Group 1: Severity
-        // Group 2: Type (optional)
-        // Group 3: Filename (optional)
-        // Group 4: Line number
-        // Group 6: Column number (optional)
-        // Group 7: Message
-        const regex = /(Error|Warning)(-[A-Z0-9_]+)?: ([A-Za-z0-9\_\-\.]+)?:(\d+):(?:(\d+):)? (.*)/i;
-        const terms = line.match(regex);
-
-        return terms;
     }
 
     private _getSeverity(severityString: string): DiagnosticSeverity {
