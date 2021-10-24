@@ -178,7 +178,6 @@ export class VerilatorDiagnostics {
 
                     let terms = this._splitTerms(line);
                     if (terms == null) {
-                        ConnectionLogger.warn('Unexpected Verilator output format: ' + line);
                         return;
                     }
 
@@ -186,14 +185,12 @@ export class VerilatorDiagnostics {
                     let message = "";
                     let lineNum = parseInt(terms[4]) - 1;
                     let colNum = 0;
-                    if (terms[6]) {
-                        colNum = parseInt(terms[6]) - 1;
+                    if (terms[5]) {
+                        colNum = parseInt(terms[5]) - 1;
                     }
-                    message = terms.slice(7).join(' ')
+                    message = terms.slice(6).join(' ')
 
                     if (lineNum != NaN) {
-                        //ConnectionLogger.log(terms[4].trim() + ' ' + message);
-
                         diagnostics.push({
                             severity: severity,
                             range: Range.create(lineNum, colNum, lineNum, Number.MAX_VALUE),
@@ -217,7 +214,7 @@ export class VerilatorDiagnostics {
         // Group 4: Line number
         // Group 6: Column number (optional)
         // Group 7: Message
-        const regex = /(Error|Warning)(-[A-Z0-9_]+)?: ([A-Za-z0-9\_\-\.]+)?:(\d+):((\d+):)? (.*)/i;
+        const regex = /(Error|Warning)(-[A-Z0-9_]+)?: ([A-Za-z0-9\_\-\.]+)?:(\d+):(?:(\d+):)? (.*)/i;
         const terms = line.match(regex);
 
         return terms;
