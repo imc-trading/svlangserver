@@ -22,6 +22,10 @@ const path = require('path');
 type TimerType = ReturnType<typeof setTimeout>;
 
 export class VerilatorDiagnostics {
+    private static readonly _whitelistedMessages: RegExp[] = [
+        /Unsupported: Interfaced port on top level module/i
+    ];
+
     private _indexer: SystemVerilogIndexer;
     private _command: string = "";
     private _defines: string[] = [];
@@ -160,59 +164,47 @@ export class VerilatorDiagnostics {
         let diagnostics: Diagnostic[] = [];
         let lines = stderr.split(/\r?\n/g);
 
+        // RegExp expression for matching Verilator messages
+        // Group 1: Severity
+        // Group 2: Type (optional)
+        // Group 3: Filename
+        // Group 4: Line number
+        // Group 5: Column number (optional)
+        // Group 6: Message
+        let regex: RegExp = new RegExp(String.raw`%(Error|Warning)(-[A-Z0-9_]+)?: (` + file.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&') + String.raw`):(\d+):(?:(\d+):)? (.*)`, 'i');
+
         // Parse output lines
         lines.forEach((line, i) => {
-            if (line.startsWith('%')) {
-                // remove the %
-                line = line.substr(1)
+            let terms = line.match(regex);
+            if (terms != null) {
+                let severity = this._getSeverity(terms[1]);
+                let message = "";
+                let lineNum = parseInt(terms[4]) - 1;
+                let colNum = 0;
+                if (terms[5]) {
+                    colNum = parseInt(terms[5]) - 1;
+                }
+                message = terms[6];
 
-                if (line.search("Unsupported: Interfaced port on top level module") > 0) {
-                    return;
+                for (let whitelistedMessage of VerilatorDiagnostics._whitelistedMessages) {
+                    if (message.search(whitelistedMessage) >= 0) {
+                        return;
+                    }
                 }
 
-                // was it for a submodule
-                if (line.search(file) > 0) {
-                    // remove the filename
-                    line = line.replace(file, '');
-                    line = line.replace(/\s+/g, ' ').trim();
-
-                    let terms = this._splitTerms(line);
-                    let severity = this._getSeverity(terms[0]);
-                    let message = terms.slice(2).join(' ')
-                    let lineNum = parseInt(terms[1].trim()) - 1;
-
-                    if (lineNum != NaN) {
-                        //ConnectionLogger.log(terms[1].trim() + ' ' + message);
-
-                        diagnostics.push({
-                            severity: severity,
-                            range: Range.create(lineNum, 0, lineNum, Number.MAX_VALUE),
-                            message: message,
-                            code: 'verilator',
-                            source: 'verilator'
-                        });
-                    }
+                if ((lineNum != NaN) && (colNum != NaN)) {
+                    diagnostics.push({
+                        severity: severity,
+                        range: Range.create(lineNum, colNum, lineNum, Number.MAX_VALUE),
+                        message: message,
+                        code: 'verilator',
+                        source: 'verilator'
+                    });
                 }
             }
         });
 
         return diagnostics;
-    }
-
-    private _splitTerms(line: string): string[] {
-        let terms = line.split(':');
-
-        for (var i = 0; i < terms.length; i++) {
-            if (terms[i] == ' ') {
-                terms.splice(i, 1);
-                i--;
-            }
-            else {
-                terms[i] = terms[i].trim();
-            }
-        }
-
-        return terms;
     }
 
     private _getSeverity(severityString: string): DiagnosticSeverity {
