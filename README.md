@@ -43,6 +43,11 @@ The code has been tested to work with below tool versions
 
 To get the snippets, git clone this repo and copy the snippets directory wherever applicable
 
+For installing from source (not applicable for VSCode)
+- `git clone https://github.com/imc-trading/svlangserver.git`
+- `cd svlangserver && npm install`
+  * Update the settings with the correct command (e.g. `/git/repo/path/svlangserver/bin/main.js`)
+
 NOTE: This has been tested with npm version 6.14.11 and node version 14.15.5
 
 ## Settings
@@ -187,6 +192,10 @@ Although most of the code is written from scratch, this [VSCode-SystemVerilog ex
 
 ## Release Notes
 See the [changelog](CHANGELOG.md) for more details
+
+### 0.3.5
+- Improvements to auto-completion and jump to definition
+- Bug fixes
 
 ### 0.3.4
 - Bug fixes

@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this repository are documented below.
 
+## [0.3.5] - 2021.10.24
+- Extended keyword and snippets completion
+- Jump to definition improvements
+  * Fix jump to definition for packages
+  * Support jump to definition for includes
+- Added systemverilog.libraryIndexing property
+- Bug fixes
+  * for [issue #8](https://github.com/imc-trading/svlangserver/issues/8)
+  * for [issue #10](https://github.com/imc-trading/svlangserver/issues/10)
+  * Typo fix in verilator.ts that caused some editors to hang on exit
+
 ## [0.3.4] - 2021.05.31
 - Bug fix for [issue #1](https://github.com/imc-trading/svlangserver/issues/1)
 - Refectored code to prevent server crashing because of errors
