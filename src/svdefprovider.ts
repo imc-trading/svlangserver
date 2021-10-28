@@ -264,24 +264,43 @@ export class SystemVerilogDefinitionProvider {
         }
     }
 
-    public getDefinitionText(document: TextDocument, position: Position): string {
+    public getDefinitionText(document: TextDocument, position: Position): [string, string[]] {
         try {
             let symbolInfo: [string, SystemVerilogSymbol|number] = this._getDefinition(document, position, true);
             if (symbolInfo[0] == undefined) {
-                return undefined;
+                return [undefined, undefined];
             }
 
+            let header: string;
+            let code: string;
             if (symbolInfo[0] == "") {
-                return this._indexer.getUserDefine(<number>(symbolInfo[1]));
+                header = 'User Define';
+                code = this._indexer.getUserDefine(<number>(symbolInfo[1]));
             }
             else if ((typeof symbolInfo[1] !== 'number') && ((<SystemVerilogSymbol>(symbolInfo[1])).type.indexOf("includefile") >= 0)) {
-                return (<SystemVerilogSymbol>(symbolInfo[1])).name;
+                header = (<SystemVerilogSymbol>(symbolInfo[1])).name;
+                code = '';
+            }
+            else {
+                header = (document.uri == symbolInfo[0]) ? '' : `File: ${symbolInfo[0]}`;
+                code = (<SystemVerilogSymbol>(symbolInfo[1])).getDefinition(symbolInfo[0]);
             }
 
-            return (<SystemVerilogSymbol>(symbolInfo[1])).getDefinition(symbolInfo[0]);
+            let trimLength: number = 0;
+            let codeLines: string[] = code.split(/\r?\n/).map((codeLine, i) => {
+                let lineTrimLength: number = codeLine.search(/\S/);
+                lineTrimLength = (lineTrimLength < 0) ? 0 : lineTrimLength;;
+                if (i == 0) {
+                    trimLength = lineTrimLength;
+                }
+                let actTrimLength: number = (trimLength < lineTrimLength) ? trimLength : lineTrimLength;
+                return codeLine.slice(actTrimLength);
+            });
+
+            return [header, codeLines];
         } catch(error) {
-            ConnectionLogger.error(error);
-            return undefined;
+            // ConnectionLogger.error(error); // Too much noise in VSCode console
+            return [undefined, undefined];
         }
     }
 }

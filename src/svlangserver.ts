@@ -297,15 +297,15 @@ connection.onHover((hoverParams: HoverParams): Promise<Hover> => {
             return Promise.resolve(undefined);
         }
 
-        let defText: string = svdefprovider.getDefinitionText(documents.get(hoverParams.textDocument.uri), hoverParams.position);
-        if (defText == undefined) {
+        let defText: [string, string[]] = svdefprovider.getDefinitionText(documents.get(hoverParams.textDocument.uri), hoverParams.position);
+        if ((defText[0] == undefined) || (defText[1] == undefined)) {
             return Promise.resolve(undefined);
         }
 
         return Promise.resolve({
             contents: {
                 kind: MarkupKind.Markdown,
-                value: ["```"].concat(defText.split(/\r?\n/).map(s => s.trim())).concat(["```"]).join('\n'),
+                value: (defText[0].length > 0 ? [`*${defText[0]}*`] : []).concat([(clientName == "coc.nvim") ? "```systemverilog" : "```"]).concat(defText[1]).concat(["```"]).join('\n'),
             },
         });
     } catch (error) {
