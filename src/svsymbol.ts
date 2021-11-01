@@ -247,6 +247,13 @@ export class SystemVerilogSymbol {
             return [];
         }
     }
+
+    public getSymbolDocumentPath(uri: string): string {
+        if (Array.isArray(this.defLocations) && (typeof this.defLocations[0] === "string")) {
+            return this.defLocations[0];
+        }
+        return uri;
+    }
 }
 
 function getSymbolKind(name: string[]): SymbolKind {

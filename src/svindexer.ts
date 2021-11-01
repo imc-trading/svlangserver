@@ -1,9 +1,9 @@
 import {
     SymbolInformation,
-    TextDocumentIdentifier
 } from 'vscode-languageserver';
 
 import {
+    Location,
     Position
 } from 'vscode-languageserver-types';
 
@@ -13,7 +13,6 @@ import {
 
 import {
     SystemVerilogSymbol,
-    SystemVerilogSymbolJSON
 } from './svsymbol';
 
 import {
@@ -55,7 +54,7 @@ const glob = require('glob');
 const path = require('path');
 const { performance } = require('perf_hooks');
 
-const CACHED_INDEX_FILE_VERSION: string = "1.0.0";
+const CACHED_INDEX_FILE_VERSION: string = "1.1.0";
 const RETRY_DELAY_MS: number = 1000;
 const MAX_RETRY_COUNT: number = 60;
 
@@ -335,7 +334,7 @@ export class SystemVerilogIndexer {
         let pkgs: string[] = [];
         let modules: string[] = [];
         let interfaces: string[] = [];
-        for (let symbol of SystemVerilogParser.fileContainerSymbols(symbolsInfo)) {
+        for (let symbol of SystemVerilogParser.fileAllContainers(symbolsInfo)) {
             if (symbol.type[0] == "package") {
                 pkgs.push(symbol.name);
             }
@@ -938,7 +937,7 @@ export class SystemVerilogIndexer {
                     continue;
                 }
 
-                for (let symbol of SystemVerilogParser.fileContainerSymbols(this._indexedFilesInfo.get(file).symbolsInfo)) {
+                for (let symbol of SystemVerilogParser.fileAllContainers(this._indexedFilesInfo.get(file).symbolsInfo)) {
                     if (symbol.name == cntnrName) {
                         return [file, symbol];
                     }
@@ -963,49 +962,7 @@ export class SystemVerilogIndexer {
         return [filePath, sym];
     }
 
-    private _findSymbol(uri: string, symbolName: string, findContainer: Boolean): [string, SystemVerilogSymbol, SystemVerilogParser.SystemVerilogContainerSymbolsInfo[]] {
-        let scopedParts: string[] = symbolName.split('::');
-        if (scopedParts.length == 1) {
-            let filePath: string = uriToPath(uri);
-            if (!this._indexedFilesInfo.has(filePath)) {
-                return [undefined, undefined, []];
-            }
-
-            let symbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo[] = this._indexedFilesInfo.get(filePath).symbolsInfo;
-            if (findContainer) {
-                let containerInfo: SystemVerilogParser.SystemVerilogContainerInfo = <SystemVerilogParser.SystemVerilogContainerInfo>(SystemVerilogParser.findSymbol(symbolsInfo, symbolName, true));
-                if (containerInfo[0] != undefined) {
-                    return [uri, containerInfo[0], containerInfo[1]];
-                }
-            }
-            else {
-                let symbol: SystemVerilogSymbol = <SystemVerilogSymbol>(SystemVerilogParser.findSymbol(symbolsInfo, symbolName, false));
-                if (symbol != undefined) {
-                    return [uri, symbol, undefined];
-                }
-            }
-        }
-
-        let pkgName: string;
-        let unscopedSymbolName: string;
-        if (scopedParts.length > 1) {
-            pkgName = scopedParts[0];
-            unscopedSymbolName = scopedParts[1];
-        }
-        else {
-            let fileImports: [string, string[]][] = this.getFileImports(uri);
-            for (let fileImport of fileImports) {
-                if (fileImport[1].includes(symbolName)) {
-                    pkgName = fileImport[0];
-                    unscopedSymbolName = symbolName;
-                    break;
-                }
-            }
-        }
-        if ((pkgName == undefined) || (unscopedSymbolName == undefined)) {
-            return [undefined, undefined, []];
-        }
-
+    private _findPackageSymbol(pkgName: string, unscopedSymbolName: string, findContainer: Boolean): [string, SystemVerilogSymbol, SystemVerilogParser.SystemVerilogContainerSymbolsInfo[]] {
         // given package and symbol name, get container info
         //   find through all symbols
         //   otherwise find through all exports
@@ -1020,7 +977,7 @@ export class SystemVerilogIndexer {
                         if ((pkgFileSymbolsInfo.length > SystemVerilogParser.FileInfoIndex.Containers) &&
                             (pkgFileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Containers] != undefined)) {
                             for (let cntnr of <SystemVerilogParser.SystemVerilogContainersInfo>(pkgFileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Containers])) {
-                                if ((cntnr[0].name == pkgItem) && (cntnr[0].type[0] == "package")) {
+                                if ((cntnr[0][0].name == pkgItem) && (cntnr[0][0].type[0] == "package")) {
                                     pkgContainer = cntnr;
                                     break;
                                 }
@@ -1041,10 +998,10 @@ export class SystemVerilogIndexer {
                             if ((pkgContainer[1].length > SystemVerilogParser.ContainerInfoIndex.Containers) &&
                                 (pkgContainer[1][SystemVerilogParser.ContainerInfoIndex.Containers] != undefined)) {
                                 let cntnrInfo: SystemVerilogParser.SystemVerilogContainerInfo = (<SystemVerilogParser.SystemVerilogContainersInfo>(pkgContainer[1][SystemVerilogParser.ContainerInfoIndex.Containers])).find(cntnr => {
-                                    return cntnr[0].name == unscopedSymbolName;
+                                    return cntnr[0][0].name == unscopedSymbolName;
                                 });
                                 if (cntnrInfo != undefined) {
-                                    return [pathToUri(pkgFilePath), cntnrInfo[0], cntnrInfo[1]];
+                                    return [pathToUri(pkgFilePath), cntnrInfo[0][0], cntnrInfo[1]];
                                 }
                             }
 
@@ -1077,12 +1034,147 @@ export class SystemVerilogIndexer {
         return [undefined, undefined, []];
     }
 
+    private _findSymbol(uri: string, symbolName: string, findContainer: Boolean): [string, SystemVerilogSymbol, SystemVerilogParser.SystemVerilogContainerSymbolsInfo[]] {
+        let scopedParts: string[] = symbolName.split('::');
+        if (scopedParts.length == 1) {
+            let filePath: string = uriToPath(uri);
+            if (!this._indexedFilesInfo.has(filePath)) {
+                return [undefined, undefined, []];
+            }
+
+            let symbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo[] = this._indexedFilesInfo.get(filePath).symbolsInfo;
+            if (findContainer) {
+                let containerInfo: SystemVerilogParser.SystemVerilogContainerInfo = <SystemVerilogParser.SystemVerilogContainerInfo>(SystemVerilogParser.findSymbol(symbolsInfo, symbolName, true));
+                if (containerInfo[0][0] != undefined) {
+                    return [uri, containerInfo[0][0], containerInfo[1]];
+                }
+            }
+            else {
+                let symbol: SystemVerilogSymbol = <SystemVerilogSymbol>(SystemVerilogParser.findSymbol(symbolsInfo, symbolName, false));
+                if (symbol != undefined) {
+                    return [uri, symbol, undefined];
+                }
+            }
+        }
+
+        let pkgName: string;
+        let unscopedSymbolName: string;
+        if (scopedParts.length > 1) {
+            pkgName = scopedParts[0];
+            unscopedSymbolName = scopedParts[1];
+        }
+        else {
+            let fileImports: [string, string[]][] = this.getFileImports(uri);
+            for (let fileImport of fileImports) {
+                if (fileImport[1].includes(symbolName)) {
+                    pkgName = fileImport[0];
+                    unscopedSymbolName = symbolName;
+                    break;
+                }
+            }
+        }
+        if ((pkgName == undefined) || (unscopedSymbolName == undefined)) {
+            return [undefined, undefined, []];
+        }
+
+        return this._findPackageSymbol(pkgName, unscopedSymbolName, findContainer);
+    }
+
     public getContainerInfo(uri: string, containerName: string): [string, SystemVerilogSymbol, SystemVerilogParser.SystemVerilogContainerSymbolsInfo[]] {
         return this._findSymbol(uri, containerName, true);
     }
 
     public findSymbol(uri: string, symbolName: string): [string, SystemVerilogSymbol] {
         return <[string, SystemVerilogSymbol]>(this._findSymbol(uri, symbolName, false).slice(0, 2));
+    }
+
+    public findScopedSymbol(uri: string, symbolName: string, position: Position): [string, SystemVerilogSymbol] {
+        let _isBefore = (pos1: Position, pos2: Position): boolean => {
+            return ((pos1.line < pos2.line) ||
+                ((pos1.line == pos2.line) && (pos1.character <= pos2.character)));
+        };
+
+        let _getScopedSymbolBeforePosition = (symbols: SystemVerilogSymbol[]): [string, SystemVerilogSymbol] => {
+            let scopedSymbol: SystemVerilogSymbol;
+            let scopedLocation: Position;
+            symbols.forEach(sym => {
+                if (sym.name == symbolName) {
+                    let symLocation: Location = sym.getSymbolLocation(uri);
+                    if ((symLocation.uri == uri) && _isBefore(symLocation.range.start, position)) {
+                        if (scopedLocation == undefined) {
+                            scopedSymbol = sym;
+                            scopedLocation = symLocation.range.start;
+                        }
+                        else if (_isBefore(scopedLocation, symLocation.range.start)) {
+                            scopedSymbol = sym;
+                            scopedLocation = symLocation.range.start;
+                        }
+                    }
+                    else if (scopedSymbol == undefined) {
+                        scopedSymbol = sym;
+                    }
+                }
+            });
+            return [scopedSymbol == undefined ? undefined : uri, scopedSymbol];
+        };
+
+        let _getScopedSymbolInContainerContainingPosition = (containersInfo: SystemVerilogParser.SystemVerilogContainersInfo): [string, SystemVerilogSymbol] => {
+            let scopedFile: string;
+            let scopedSymbol: SystemVerilogSymbol;
+            for (let cntnrInfo of containersInfo) {
+                let cntnrStart: Location = cntnrInfo[0][0].getSymbolLocation(uri);
+                let cntnrEnd: Position = typeof cntnrInfo[0][1][0] === "number" ? Position.create(cntnrInfo[0][1][0], <number>(cntnrInfo[0][1][1])) : undefined;
+                if ((cntnrStart.uri == uri) && _isBefore(cntnrStart.range.start, position) &&
+                    (cntnrEnd !== undefined) && _isBefore(position, cntnrEnd)) {
+                    let cntnrs: SystemVerilogParser.SystemVerilogContainersInfo = SystemVerilogParser.containerContainers(cntnrInfo);
+                    [scopedFile, scopedSymbol] = _getScopedSymbolInContainerContainingPosition(cntnrs);
+
+                    if ((scopedFile == undefined) || (scopedSymbol == undefined)) {
+                        [scopedFile, scopedSymbol] = _getScopedSymbolBeforePosition(cntnrs.map(cntnr => cntnr[0][0]).concat(SystemVerilogParser.containerTopSymbols(cntnrInfo)));
+                    }
+
+                    if (scopedSymbol == undefined) {
+                        //imported symbols
+                        let cntnrImports: SystemVerilogParser.SystemVerilogImportsInfo = SystemVerilogParser.containerImports(cntnrInfo[1], true);
+                        let resolvedPkgSymNames: [string, string[]][] = this._resolveImportsIntoSymbolNames(cntnrImports);
+                        for (let pkgSymNames of resolvedPkgSymNames) {
+                            let symIndx: number = pkgSymNames[1].indexOf(symbolName);
+                            if (symIndx > 0) {
+                                [scopedFile, scopedSymbol] = this._findPackageSymbol(pkgSymNames[0], symbolName, false);
+                                break;
+                            }
+                        }
+                    }
+
+                    if ((scopedFile != undefined) && (scopedSymbol != undefined)) {
+                        break;
+                    }
+                }
+            }
+            return [scopedFile, scopedSymbol];
+        };
+
+        let filePath: string = uriToPath(uri);
+        if (!this._indexedFilesInfo.has(filePath)) {
+            return [undefined, undefined];
+        }
+
+        let symbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo[] = this._indexedFilesInfo.get(filePath).symbolsInfo;
+        let containerScopedFile: string;
+        let containerScopedSymbol: SystemVerilogSymbol;
+        [containerScopedFile, containerScopedSymbol] = _getScopedSymbolInContainerContainingPosition(SystemVerilogParser.fileContainers(symbolsInfo));
+
+        if ((containerScopedFile == undefined) || (containerScopedSymbol == undefined)) {
+            let scopedFile: string;
+            let scopedSymbol: SystemVerilogSymbol;
+            let fileTopSymbols: SystemVerilogSymbol[] = SystemVerilogParser.fileTopSymbols(symbolsInfo);
+            if (fileTopSymbols != undefined) {
+                [scopedFile, scopedSymbol] = _getScopedSymbolBeforePosition(fileTopSymbols);
+            }
+            return [scopedFile, scopedSymbol];
+        }
+
+        return [containerScopedFile, containerScopedSymbol];
     }
 
     public getMacros(fileUri: string, macroName?: string): [string, SystemVerilogSymbol[]][] {
@@ -1258,8 +1350,6 @@ export class SystemVerilogIndexer {
         else {
             return [undefined, undefined, undefined];
         }
-
-        return [undefined, undefined, undefined];
     }
 
     public getHierarchicalSymbol(fileUri: string, symbolParts: string[]): [string, SystemVerilogSymbol] {
@@ -1301,29 +1391,29 @@ export class SystemVerilogIndexer {
         // Does not handle arrays (i.e. a[0].blah) and multiple layers of typedefs
 
         let currFile: string = fileUri;
-        let currContainer: SystemVerilogParser.SystemVerilogContainerInfo = [undefined, undefined];
+        let currContainer: SystemVerilogParser.SystemVerilogContainerInfo = [[undefined, undefined], undefined];
         for (let i: number = 0; i < symbolParts.length; i++) {
             let symbolPart: string = symbolParts[i];
-            if (currContainer[0] == undefined) {
-                [currFile, currContainer[0]] = this.findSymbol(currFile, symbolPart);
-                if (currContainer[0] == undefined) {
+            if (currContainer[0][0] == undefined) {
+                [currFile, currContainer[0][0]] = this.findSymbol(currFile, symbolPart);
+                if (currContainer[0][0] == undefined) {
                     let filePath: string = this.getInstFilePath(symbolPart);
                     if (filePath == undefined) {
                         return [undefined, undefined];
                     }
-                    [currFile, currContainer[0], currContainer[1]] = this.getContainerInfo(pathToUri(filePath), symbolPart);
+                    [currFile, currContainer[0][0], currContainer[1]] = this.getContainerInfo(pathToUri(filePath), symbolPart);
                 }
             }
             else {
-                currContainer[0] = <SystemVerilogSymbol>(SystemVerilogParser.findContainerSymbol(currContainer[1], symbolPart, false));
+                currContainer[0][0] = <SystemVerilogSymbol>(SystemVerilogParser.findContainerSymbol(currContainer[1], symbolPart, false));
             }
 
             if (i == (symbolParts.length - 1)) {
-                return [currFile, currContainer[0]];
+                return [currFile, currContainer[0][0]];
             }
 
-            [currFile, currContainer[0], currContainer[1]] = this.getSymbolTypeContainerInfo(currFile, currContainer[0], currContainer[1]);
-            if ((currFile == undefined) || (currContainer[0] == undefined) || (currContainer[1] == undefined)) {
+            [currFile, currContainer[0][0], currContainer[1]] = this.getSymbolTypeContainerInfo(currFile, currContainer[0][0], currContainer[1]);
+            if ((currFile == undefined) || (currContainer[0][0] == undefined) || (currContainer[1] == undefined)) {
                 return [undefined, undefined];
             }
         }
@@ -1331,8 +1421,8 @@ export class SystemVerilogIndexer {
         return [undefined, undefined];
     }
 
-    public getFileImports(fileUri: string): [string, string[]][] {
-        // get all imports from file into importsQ
+    private _resolveImportsIntoSymbolNames(importsInfo: SystemVerilogParser.SystemVerilogImportsInfo): [string, string[]][] {
+        // get all imports into importsQ
         // iterate on importsQ with import
         //   if import is *
         //      get all symbols from the container and append into result
@@ -1348,64 +1438,70 @@ export class SystemVerilogIndexer {
         //   else
         //      append the import to result
         let symbolNames: [string, string[]][] = [];
-        let filePath: string = uriToPath(fileUri);
-        if (this._indexedFilesInfo.has(filePath)) {
-            let fileImportsInfo: SystemVerilogParser.SystemVerilogImportsInfo = SystemVerilogParser.fileAllImports(this._indexedFilesInfo.get(filePath).symbolsInfo);
-            while (fileImportsInfo.length > 0) {
-                let importItem: SystemVerilogParser.SystemVerilogImportInfo = fileImportsInfo.shift();
-                if ((importItem[1].length == 1) &&
-                    (importItem[1][0] == "*")) {
-                    if (this._pkgToFiles.has(importItem[0])) {
-                        for (let pkgFilePath of this._pkgToFiles.get(importItem[0])) {
-                            if (this._indexedFilesInfo.has(pkgFilePath)) {
-                                let pkgFileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo[] = this._indexedFilesInfo.get(pkgFilePath).symbolsInfo;
-                                let pkgContainer: SystemVerilogParser.SystemVerilogContainerInfo;
-                                if ((pkgFileSymbolsInfo.length > SystemVerilogParser.FileInfoIndex.Containers) &&
-                                    (pkgFileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Containers] != undefined)) {
-                                    for (let cntnr of <SystemVerilogParser.SystemVerilogContainersInfo>(pkgFileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Containers])) {
-                                        if ((cntnr[0].name == importItem[0]) && (cntnr[0].type[0] == "package")) {
-                                            pkgContainer = cntnr;
-                                            break;
-                                        }
+        while (importsInfo.length > 0) {
+            let importItem: SystemVerilogParser.SystemVerilogImportInfo = importsInfo.shift();
+            if ((importItem[1].length == 1) &&
+                (importItem[1][0] == "*")) {
+                if (this._pkgToFiles.has(importItem[0])) {
+                    for (let pkgFilePath of this._pkgToFiles.get(importItem[0])) {
+                        if (this._indexedFilesInfo.has(pkgFilePath)) {
+                            let pkgFileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo[] = this._indexedFilesInfo.get(pkgFilePath).symbolsInfo;
+                            let pkgContainer: SystemVerilogParser.SystemVerilogContainerInfo;
+                            if ((pkgFileSymbolsInfo.length > SystemVerilogParser.FileInfoIndex.Containers) &&
+                                (pkgFileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Containers] != undefined)) {
+                                for (let cntnr of <SystemVerilogParser.SystemVerilogContainersInfo>(pkgFileSymbolsInfo[SystemVerilogParser.FileInfoIndex.Containers])) {
+                                    if ((cntnr[0][0].name == importItem[0]) && (cntnr[0][0].type[0] == "package")) {
+                                        pkgContainer = cntnr;
+                                        break;
                                     }
                                 }
-                                if (pkgContainer != undefined) {
-                                    if ((pkgContainer[1].length > SystemVerilogParser.ContainerInfoIndex.Symbols) &&
-                                        (pkgContainer[1][SystemVerilogParser.ContainerInfoIndex.Symbols] != undefined)) {
-                                        symbolNames.push([importItem[0], (<SystemVerilogParser.SystemVerilogSymbolsInfo>(pkgContainer[1][SystemVerilogParser.ContainerInfoIndex.Symbols])).map(sym => {
-                                            return sym.name;
-                                        })]);
-                                    }
+                            }
+                            if (pkgContainer != undefined) {
+                                if ((pkgContainer[1].length > SystemVerilogParser.ContainerInfoIndex.Symbols) &&
+                                    (pkgContainer[1][SystemVerilogParser.ContainerInfoIndex.Symbols] != undefined)) {
+                                    symbolNames.push([importItem[0], (<SystemVerilogParser.SystemVerilogSymbolsInfo>(pkgContainer[1][SystemVerilogParser.ContainerInfoIndex.Symbols])).map(sym => {
+                                        return sym.name;
+                                    })]);
+                                }
 
-                                    if ((pkgContainer[1].length > SystemVerilogParser.ContainerInfoIndex.Containers) &&
-                                        (pkgContainer[1][SystemVerilogParser.ContainerInfoIndex.Containers] != undefined)) {
-                                        symbolNames.push([importItem[0], (<SystemVerilogParser.SystemVerilogContainersInfo>(pkgContainer[1][SystemVerilogParser.ContainerInfoIndex.Containers])).map(cntnrInfo => {
-                                            return cntnrInfo[0].name;
-                                        })]);
-                                    }
+                                if ((pkgContainer[1].length > SystemVerilogParser.ContainerInfoIndex.Containers) &&
+                                    (pkgContainer[1][SystemVerilogParser.ContainerInfoIndex.Containers] != undefined)) {
+                                    symbolNames.push([importItem[0], (<SystemVerilogParser.SystemVerilogContainersInfo>(pkgContainer[1][SystemVerilogParser.ContainerInfoIndex.Containers])).map(cntnrInfo => {
+                                        return cntnrInfo[0][0].name;
+                                    })]);
+                                }
 
-                                    let containerExportsInfo: SystemVerilogParser.SystemVerilogExportsInfo = SystemVerilogParser.containerExports(pkgContainer[1]);
-                                    for (let exportItem of containerExportsInfo) {
-                                        if (exportItem[0] == "*") {
-                                            fileImportsInfo.unshift(...SystemVerilogParser.containerImports(pkgContainer[1]));
-                                        }
-                                        else if ((exportItem[1].length == 1) &&
-                                                 (exportItem[1][0] == "*")) {
-                                            fileImportsInfo.unshift(exportItem);
-                                        }
-                                        else {
-                                            symbolNames.push(exportItem);
-                                        }
+                                let containerExportsInfo: SystemVerilogParser.SystemVerilogExportsInfo = SystemVerilogParser.containerExports(pkgContainer[1]);
+                                for (let exportItem of containerExportsInfo) {
+                                    if (exportItem[0] == "*") {
+                                        importsInfo.unshift(...SystemVerilogParser.containerImports(pkgContainer[1]));
+                                    }
+                                    else if ((exportItem[1].length == 1) &&
+                                             (exportItem[1][0] == "*")) {
+                                        importsInfo.unshift(exportItem);
+                                    }
+                                    else {
+                                        symbolNames.push(exportItem);
                                     }
                                 }
                             }
                         }
                     }
                 }
-                else {
-                    symbolNames.push(importItem);
-                }
             }
+            else {
+                symbolNames.push(importItem);
+            }
+        }
+        return symbolNames;
+    }
+
+    public getFileImports(fileUri: string): [string, string[]][] {
+        let symbolNames: [string, string[]][] = [];
+        let filePath: string = uriToPath(fileUri);
+        if (this._indexedFilesInfo.has(filePath)) {
+            let fileImportsInfo: SystemVerilogParser.SystemVerilogImportsInfo = SystemVerilogParser.fileAllImports(this._indexedFilesInfo.get(filePath).symbolsInfo);
+            return this._resolveImportsIntoSymbolNames(fileImportsInfo);
         }
         return symbolNames;
     }

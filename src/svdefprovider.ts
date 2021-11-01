@@ -195,7 +195,7 @@ export class SystemVerilogDefinitionProvider {
             }
             let filePath: string;
             let symbol: SystemVerilogSymbol;
-            [filePath, symbol] = this._indexer.findSymbol(document.uri, symText);
+            [filePath, symbol] = scope.startsWith("identifier.scoped.") ? this._indexer.findSymbol(document.uri, symText) : this._indexer.findScopedSymbol(document.uri, symText, position);
             if ((filePath == undefined) || (symbol == undefined)) {
                 symbol = this._indexer.getContainerSymbol(svtokens[tokenNum].text);
                 if (symbol == undefined) {
