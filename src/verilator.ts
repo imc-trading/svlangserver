@@ -1,8 +1,7 @@
 import {
     DiagnosticSeverity,
     Diagnostic,
-    Range,
-    TextDocument
+    Range
 } from "vscode-languageserver";
 
 import {
@@ -20,6 +19,66 @@ import * as child from 'child_process';
 const path = require('path');
 
 type TimerType = ReturnType<typeof setTimeout>;
+
+function getVerilatorSeverity(severityString: string): DiagnosticSeverity {
+    let result: DiagnosticSeverity = DiagnosticSeverity.Information;
+
+    if (severityString.startsWith('Error')) {
+        result = DiagnosticSeverity.Error;
+    }
+    else if (severityString.startsWith('Warning')) {
+        result = DiagnosticSeverity.Warning;
+    }
+
+    return result;
+}
+
+function parseDiagnostics(stdout: string, stderr: string, file: string, whitelistedMessages: RegExp[] = []): Diagnostic[] {
+    let diagnostics: Diagnostic[] = [];
+    let lines = stderr.split(/\r?\n/g);
+
+    // RegExp expression for matching Verilator messages
+    // Group 1: Severity
+    // Group 2: Type (optional)
+    // Group 3: Filename
+    // Group 4: Line number
+    // Group 5: Column number (optional)
+    // Group 6: Message
+    let regex: RegExp = new RegExp(String.raw`%(Error|Warning)(-[A-Z0-9_]+)?: (` + file.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&') + String.raw`):(\d+):(?:(\d+):)? (.*)`, 'i');
+
+    // Parse output lines
+    lines.forEach((line, i) => {
+        let terms = line.match(regex);
+        if (terms != null) {
+            let severity = this._getSeverity(terms[1]);
+            let message = "";
+            let lineNum = parseInt(terms[4]) - 1;
+            let colNum = 0;
+            if (terms[5]) {
+                colNum = parseInt(terms[5]) - 1;
+            }
+            message = terms[6];
+
+            for (let whitelistedMessage of whitelistedMessages) {
+                if (message.search(whitelistedMessage) >= 0) {
+                    return;
+                }
+            }
+
+            if ((lineNum != NaN) && (colNum != NaN)) {
+                diagnostics.push({
+                    severity: severity,
+                    range: Range.create(lineNum, colNum, lineNum, Number.MAX_VALUE),
+                    message: message,
+                    code: 'verilator',
+                    source: 'verilator'
+                });
+            }
+        }
+    });
+
+    return diagnostics;
+}
 
 export class VerilatorDiagnostics {
     private static readonly _whitelistedMessages: RegExp[] = [
@@ -114,7 +173,7 @@ export class VerilatorDiagnostics {
                     }
                     if (statusRef[0]) {
                         this._alreadyRunning.delete(file);
-                        resolve(this._parseDiagnostics(error, stdout, stderr, actFile));
+                        resolve(parseDiagnostics(stdout, stderr, actFile, VerilatorDiagnostics._whitelistedMessages));
                     }
                     else {
                         resolve([]);
@@ -158,66 +217,6 @@ export class VerilatorDiagnostics {
             ConnectionLogger.error(error);
             return Promise.resolve([]);
         }
-    }
-
-    private _parseDiagnostics(error: child.ExecException, stdout: string, stderr: string, file: string): Diagnostic[] {
-        let diagnostics: Diagnostic[] = [];
-        let lines = stderr.split(/\r?\n/g);
-
-        // RegExp expression for matching Verilator messages
-        // Group 1: Severity
-        // Group 2: Type (optional)
-        // Group 3: Filename
-        // Group 4: Line number
-        // Group 5: Column number (optional)
-        // Group 6: Message
-        let regex: RegExp = new RegExp(String.raw`%(Error|Warning)(-[A-Z0-9_]+)?: (` + file.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&') + String.raw`):(\d+):(?:(\d+):)? (.*)`, 'i');
-
-        // Parse output lines
-        lines.forEach((line, i) => {
-            let terms = line.match(regex);
-            if (terms != null) {
-                let severity = this._getSeverity(terms[1]);
-                let message = "";
-                let lineNum = parseInt(terms[4]) - 1;
-                let colNum = 0;
-                if (terms[5]) {
-                    colNum = parseInt(terms[5]) - 1;
-                }
-                message = terms[6];
-
-                for (let whitelistedMessage of VerilatorDiagnostics._whitelistedMessages) {
-                    if (message.search(whitelistedMessage) >= 0) {
-                        return;
-                    }
-                }
-
-                if ((lineNum != NaN) && (colNum != NaN)) {
-                    diagnostics.push({
-                        severity: severity,
-                        range: Range.create(lineNum, colNum, lineNum, Number.MAX_VALUE),
-                        message: message,
-                        code: 'verilator',
-                        source: 'verilator'
-                    });
-                }
-            }
-        });
-
-        return diagnostics;
-    }
-
-    private _getSeverity(severityString: string): DiagnosticSeverity {
-        let result: DiagnosticSeverity = DiagnosticSeverity.Information;
-
-        if (severityString.startsWith('Error')) {
-            result = DiagnosticSeverity.Error;
-        }
-        else if (severityString.startsWith('Warning')) {
-            result = DiagnosticSeverity.Warning;
-        }
-
-        return result;
     }
 
     public cleanupTmpFiles() {
