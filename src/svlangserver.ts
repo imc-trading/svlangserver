@@ -304,7 +304,7 @@ connection.onHover((hoverParams: HoverParams): Promise<Hover> => {
         return Promise.resolve({
             contents: {
                 kind: MarkupKind.Markdown,
-                value: ["```"].concat(defText.split(/\r?\n/).map(s => "    " + s.trim())).concat(["```"]).join('\n'),
+                value: ["```"].concat(defText.split(/\r?\n/).map(s => s.trim())).concat(["```"]).join('\n'),
             },
         });
     } catch (error) {
