@@ -11,7 +11,6 @@ import {
 import {
     ConnectionLogger,
     fsWriteFileSync,
-    fsUnlinkSync,
     getTmpDirSync
 } from "./genutils";
 
@@ -47,13 +46,15 @@ function parseDiagnostics(stdout: string, stderr: string, file: string, whitelis
     let regex: RegExp = new RegExp(String.raw`%(Error|Warning)(-[A-Z0-9_]+)?: (` + file.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&') + String.raw`):(\d+):(?:(\d+):)? (.*)`, 'i');
 
     // Parse output lines
-    lines.forEach((line, i) => {
+    for (let i = 0; i < lines.length; ++i) {
+        const line = lines[i]
         let terms = line.match(regex);
         if (terms != null) {
-            let severity = this._getSeverity(terms[1]);
+            let severity = getVerilatorSeverity(terms[1]);
             let message = "";
             let lineNum = parseInt(terms[4]) - 1;
             let colNum = 0;
+            let colNumEnd = Number.MAX_VALUE
             if (terms[5]) {
                 colNum = parseInt(terms[5]) - 1;
             }
@@ -65,17 +66,25 @@ function parseDiagnostics(stdout: string, stderr: string, file: string, whitelis
                 }
             }
 
+            // Match the ^~~~~~~ under the error message
+            if (/\s*\^~+/.exec(lines[i + 2])) {
+                colNum = lines[i + 2].indexOf('^')
+                colNumEnd = lines[i + 2].lastIndexOf('~')
+                i += 2;
+            }
+
+
             if ((lineNum != NaN) && (colNum != NaN)) {
                 diagnostics.push({
                     severity: severity,
-                    range: Range.create(lineNum, colNum, lineNum, Number.MAX_VALUE),
+                    range: Range.create(lineNum, colNum, lineNum, colNumEnd),
                     message: message,
                     code: 'verilator',
                     source: 'verilator'
                 });
             }
         }
-    });
+    }
 
     return diagnostics;
 }
