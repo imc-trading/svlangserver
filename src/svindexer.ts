@@ -110,8 +110,8 @@ export class SystemVerilogIndexer {
         return this._rootPath + "/" + this._clientDir + "/svlangserver/index.json";
     }
 
-    getVerilatorOptionsFile() : string {
-        return this._rootPath + "/" + this._clientDir + "/svlangserver/verilator.vc";
+    getLinterOptionsFile() : string {
+        return this._rootPath + "/" + this._clientDir + "/svlangserver/linter.vc";
     }
 
     setDefines(defines: string[]) {
@@ -430,7 +430,7 @@ export class SystemVerilogIndexer {
         for (let incdir of [...new Set(this._srcFiles.map(file => path.dirname(file))), ...new Set(this._srcFiles.map(file => path.dirname(file)))]) {
             this._optionsFileContent.push('+incdir+' + incdir);
         }
-        fsWriteFile(this.getVerilatorOptionsFile(), this._optionsFileContent.join('\n'))
+        fsWriteFile(this.getLinterOptionsFile(), this._optionsFileContent.join('\n'))
             .catch(error => {
                 ConnectionLogger.error(error);
             });

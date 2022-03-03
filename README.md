@@ -52,14 +52,16 @@ NOTE: This has been tested with npm version 6.14.11 and node version 14.15.5
 
 ## Settings
 - `systemverilog.includeIndexing`: _Array_, Globs defining files to be indexed
-- `systemverilog.libraryIndexing`: _Array_, Globs defining library files to be added to verilator linting. It's useful when module name is not equal to filename.
+- `systemverilog.libraryIndexing`: _Array_, Globs defining library files to be added to linting. It's useful when module name is not equal to filename.
 - `systemverilog.excludeIndexing`: _Array_, Exclude files from indexing based on glob
-- `systemverilog.launchConfiguration`: _String_, Command to run for launching verilator linting
+- `systemverilog.linter`: _String_, Select linter
+  * Default: false
+- `systemverilog.launchConfiguration`: _String_, Command to run for launching linting
   * Default: _verilator --sv --lint-only --Wall_
   * If not in path, replace _verilator_ with the appropriate command
 - `systemverilog.lintOnUnsaved`: _Boolean_, Lint even unsaved files
   * Default: *true*
-- `systemverilog.defines`: _Array_, Defines for the project. Used by the language server as well as verilator linting
+- `systemverilog.defines`: _Array_, Defines for the project. Used by the language server as well as linting
   * Default: empty
 - `systemverilog.formatCommand`: _String_, verible-verilog-format command for code formatting
   * Default: _verible-verilog-format_
@@ -70,7 +72,7 @@ NOTE: This has been tested with npm version 6.14.11 and node version 14.15.5
   * Default: false
 - `systemverilog.disableSignatureHelpProvider`: _Boolean_, Disable signature help provided by the language server
   * Default: false
-- `systemverilog.disableLinting`: _Boolean_, Disable verilator linting
+- `systemverilog.disableLinting`: _Boolean_, Disable linting
   * Default: false
 - Example coc.nvim settings file
     ```json

@@ -75,7 +75,7 @@ let hasConfigurationCapability: Boolean = false;
 let documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 let svindexer: SystemVerilogIndexer = new SystemVerilogIndexer();
 let svdefprovider: SystemVerilogDefinitionProvider = new SystemVerilogDefinitionProvider(svindexer);
-let verilator: VerilogDiagnostics = new VerilogDiagnostics(svindexer);
+let diagnostics: VerilogDiagnostics = new VerilogDiagnostics(svindexer);
 let svcompleter: SystemVerilogCompleter = new SystemVerilogCompleter(svindexer);
 let svsignhelper: SystemVerilogSignatureHelpProvider = new SystemVerilogSignatureHelpProvider(svindexer);
 let svformatter: SystemVerilogFormatter = new SystemVerilogFormatter();
@@ -102,7 +102,7 @@ connection.onInitialize((params: InitializeParams) => {
         else {
             svindexer.setClientDir(".svlangserver");
         }
-        verilator.setOptionsFile(svindexer.getVerilatorOptionsFile());
+        diagnostics.setOptionsFile(svindexer.getLinterOptionsFile());
     } catch (error) {
         ConnectionLogger.error(error);
     }
@@ -206,9 +206,9 @@ function updateSettings(change, forceUpdate: Boolean = false) {
         svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.excludeIndexing"));
     }
 
-    verilator.setLinter(settings.get("systemverilog.linter"));
-    verilator.setCommand(settings.get("systemverilog.launchConfiguration"));
-    verilator.setDefines(settings.get("systemverilog.defines"));
+    diagnostics.setLinter(settings.get("systemverilog.linter"));
+    diagnostics.setCommand(settings.get("systemverilog.launchConfiguration"));
+    diagnostics.setDefines(settings.get("systemverilog.defines"));
     svformatter.setCommand(settings.get("systemverilog.formatCommand"));
 }
 
@@ -318,7 +318,7 @@ function lintDocument(uri: string, text?: string) {
     if (settings.get("systemverilog.disableLinting")) {
         return;
     }
-    verilator.lint(uriToPath(uri), text)
+    diagnostics.lint(uriToPath(uri), text)
         .then((diagnostics) => {
             connection.sendDiagnostics({ uri: uri, diagnostics });
         })
@@ -391,23 +391,23 @@ connection.onDocumentRangeFormatting((rangeFormatParams) => {
 });
 
 connection.onShutdown((token) => {
-    verilator.cleanupTmpFiles();
+    diagnostics.cleanupTmpFiles();
     svindexer.saveIndexOnExit();
 });
 
 // Save index on exit
 connection.onExit(() => {
-    verilator.cleanupTmpFiles();
+    diagnostics.cleanupTmpFiles();
     svindexer.saveIndexOnExit();
 });
 
 process.on('exit', () => {
-    verilator.cleanupTmpFiles();
+    diagnostics.cleanupTmpFiles();
     svindexer.saveIndexOnExit();
 });
 
 process.on('SIGTERM', () => {
-    verilator.cleanupTmpFiles();
+    diagnostics.cleanupTmpFiles();
     svindexer.saveIndexOnExit();
 });
 
