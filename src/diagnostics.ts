@@ -43,7 +43,7 @@ function parseDiagnostics(stdout: string, stderr: string, file: string, whitelis
     // Group 4: Line number
     // Group 5: Column number (optional)
     // Group 6: Message
-    let regex: RegExp = new RegExp(String.raw`%(Error|Warning)(-[A-Z0-9_]+)?: (` + file.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&') + String.raw`):(\d+):(?:(\d+):)? (.*)`, 'i');
+    let regex: RegExp = new RegExp(String.raw`%(Error|Warning)(-[A-Z0-9_]+)?: (${file.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}):(\d+):(?:(\d+):)? (.*)`, 'i');
 
     // Parse output lines
     for (let i = 0; i < lines.length; ++i) {
