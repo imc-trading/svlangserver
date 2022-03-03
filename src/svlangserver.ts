@@ -34,8 +34,8 @@ import {
 } from './svdefprovider';
 
 import {
-    VerilatorDiagnostics
-} from './verilator';
+    VerilogDiagnostics
+} from './diagnostics';
 
 import {
     SystemVerilogCompleter
@@ -75,7 +75,7 @@ let hasConfigurationCapability: Boolean = false;
 let documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 let svindexer: SystemVerilogIndexer = new SystemVerilogIndexer();
 let svdefprovider: SystemVerilogDefinitionProvider = new SystemVerilogDefinitionProvider(svindexer);
-let verilator: VerilatorDiagnostics = new VerilatorDiagnostics(svindexer);
+let verilator: VerilogDiagnostics = new VerilogDiagnostics(svindexer);
 let svcompleter: SystemVerilogCompleter = new SystemVerilogCompleter(svindexer);
 let svsignhelper: SystemVerilogSignatureHelpProvider = new SystemVerilogSignatureHelpProvider(svindexer);
 let svformatter: SystemVerilogFormatter = new SystemVerilogFormatter();

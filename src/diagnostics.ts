@@ -89,7 +89,7 @@ function parseDiagnostics(stdout: string, stderr: string, file: string, whitelis
     return diagnostics;
 }
 
-export class VerilatorDiagnostics {
+export class VerilogDiagnostics {
     private static readonly _whitelistedMessages: RegExp[] = [
         /Unsupported: Interfaced port on top level module/i
     ];
@@ -182,7 +182,7 @@ export class VerilatorDiagnostics {
                     }
                     if (statusRef[0]) {
                         this._alreadyRunning.delete(file);
-                        resolve(parseDiagnostics(stdout, stderr, actFile, VerilatorDiagnostics._whitelistedMessages));
+                        resolve(parseDiagnostics(stdout, stderr, actFile, VerilogDiagnostics._whitelistedMessages));
                     }
                     else {
                         resolve([]);
