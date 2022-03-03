@@ -118,10 +118,17 @@
                         "default": [],
                         "description": "Files excluded for indexing (glob pattern)."
                     },
+                    "systemverilog.linter": {
+                        "type": "string",
+                        "enum": ["icarus", "verilator"],
+                        "default": "verilator",
+                        "description": "Linter to use"
+                    },
                     "systemverilog.launchConfiguration": {
                         "type": "string",
                         "default": "verilator -sv --lint-only --Wall",
-                        "description": "Verilator command used for linting"
+                        "description": "Command used for linting",
+                        "examples": ["verilator -sv --lint-only --Wall", "iverilog -t null"]
                     },
                     "systemverilog.defines": {
                         "type": "array",

@@ -32,7 +32,7 @@ function getVerilatorSeverity(severityString: string): DiagnosticSeverity {
     return result;
 }
 
-function parseDiagnostics(stdout: string, stderr: string, file: string, whitelistedMessages: RegExp[] = []): Diagnostic[] {
+function parseVerilatorDiagnostics(stdout: string, stderr: string, file: string, whitelistedMessages: RegExp[] = []): Diagnostic[] {
     let diagnostics: Diagnostic[] = [];
     let lines = stderr.split(/\r?\n/g);
 
@@ -89,12 +89,67 @@ function parseDiagnostics(stdout: string, stderr: string, file: string, whitelis
     return diagnostics;
 }
 
+function getIcarusSeverity(severityString: string, message: string): DiagnosticSeverity {
+    let result: DiagnosticSeverity = DiagnosticSeverity.Information;
+
+    if (severityString === 'error' || message === 'syntax error') {
+        result = DiagnosticSeverity.Error;
+    }
+    else if (severityString === 'warning') {
+        result = DiagnosticSeverity.Warning;
+    }
+
+    return result;
+}
+
+function parseIcarusDiagnostics (stdout: string, stderr: string, file: string, whitelistedMessages: RegExp[] = []) {
+    let diagnostics: Diagnostic[] = [];
+    let lines = stderr.split(/\r?\n/g);
+
+    // RegExp expression for matching Icarus messages
+    // Group 1: Filename
+    // Group 2: Line number
+    // Group 3: Severity (optional)
+    // Group 4: Message
+    let regex: RegExp = new RegExp(String.raw`(${file.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}):(\d+):(?: (error|warning):)? (.*)`, 'i');
+
+    // Parse output lines
+    for (let i = 0; i < lines.length; ++i) {
+        const line = lines[i]
+        let terms = line.match(regex);
+        if (terms != null) {
+            let message = terms[4];
+            let severity = getIcarusSeverity(terms[3], message);
+            let lineNum = parseInt(terms[2]) - 1;
+
+            for (let whitelistedMessage of whitelistedMessages) {
+                if (message.search(whitelistedMessage) >= 0) {
+                    return;
+                }
+            }
+
+            if (lineNum != NaN) {
+                diagnostics.push({
+                    severity: severity,
+                    range: Range.create(lineNum, 0, lineNum, Number.MAX_VALUE),
+                    message: message,
+                    code: 'iverilog',
+                    source: 'iverilog'
+                });
+            }
+        }
+    }
+
+    return diagnostics;
+}
+
 export class VerilogDiagnostics {
     private static readonly _whitelistedMessages: RegExp[] = [
         /Unsupported: Interfaced port on top level module/i
     ];
 
     private _indexer: SystemVerilogIndexer;
+    private _linter: 'icarus' | 'verilator' = 'icarus';
     private _command: string = "";
     private _defines: string[] = [];
     private _optionsFile: string = "";
@@ -111,6 +166,10 @@ export class VerilogDiagnostics {
 
     public setCommand(cmd: string) {
         this._command = cmd;
+    }
+
+    public setLinter(linter: 'icarus' | 'verilator') {
+        this._linter = linter;
     }
 
     public setOptionsFile(file: string) {
@@ -139,7 +198,7 @@ export class VerilogDiagnostics {
             //ConnectionLogger.log(`DEBUG: Killing already running command to start a new one`);
             _kill();
         }
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             let actFile: string = text == undefined ? file : path.join(this._tmpDir.name, "sources", file);
             let optionsFile: string = this._optionsFile;
             let vcTmpFileNum: number;
@@ -182,7 +241,18 @@ export class VerilogDiagnostics {
                     }
                     if (statusRef[0]) {
                         this._alreadyRunning.delete(file);
-                        resolve(parseDiagnostics(stdout, stderr, actFile, VerilogDiagnostics._whitelistedMessages));
+                        switch (this._linter) {
+                            case "icarus":
+                                resolve(parseIcarusDiagnostics(stdout, stderr, actFile, VerilogDiagnostics._whitelistedMessages));
+                                break;
+                            case "verilator":
+                                resolve(parseVerilatorDiagnostics(stdout, stderr, actFile, VerilogDiagnostics._whitelistedMessages));
+                                break;
+                            default:
+                                reject(new Error(`Unknown linter ${this._linter}`));
+                                break;
+                        }
+                        
                     }
                     else {
                         resolve([]);

@@ -206,6 +206,7 @@ function updateSettings(change, forceUpdate: Boolean = false) {
         svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.excludeIndexing"));
     }
 
+    verilator.setLinter(settings.get("systemverilog.linter"));
     verilator.setCommand(settings.get("systemverilog.launchConfiguration"));
     verilator.setDefines(settings.get("systemverilog.defines"));
     svformatter.setCommand(settings.get("systemverilog.formatCommand"));
