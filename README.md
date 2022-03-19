@@ -1,5 +1,5 @@
 # SVLangserver
-A language server for systemverilog that has been tested to work with coc.nvim, VSCode, Sublime Text 3 and emacs
+A language server for systemverilog that has been tested to work with coc.nvim, VSCode, Sublime Text 4 and emacs
 
 ## Features
 - Auto completion (no need for ctags or other such mechanisms)
@@ -9,7 +9,8 @@ A language server for systemverilog that has been tested to work with coc.nvim, 
 - Hover over help
 - Signature help
 - Fast indexing
-- Verilator linting on the fly
+- Verilator/Icarus linting on the fly
+- Report hierarchy of a module
 - Code snippets for many common blocks
 - Code formatting with verible-verilog-format
 - Elaborate syntax highlighting (for VSCode)
@@ -17,12 +18,13 @@ A language server for systemverilog that has been tested to work with coc.nvim, 
 ## Versions
 The code has been tested to work with below tool versions
 - vim 8.2
-  * coc.nvim 0.0.80-2cece2600a
+  * coc.nvim 0.0.80-0b5130ea38
 - VSCode 1.52.0
-- Sublime Text 3.2.2
-- emacs 26.1
-  * lsp-mode 20210513.1723
-- Verilator 4.008
+- Sublime Text Build 4126
+- emacs 29.0.50
+  * lsp-mode lsp-mode-20220328.1429
+- Verilator 4.110
+- Icarus Verilog Compiler 10.2
 - Verible v0.0-1114-ged89c1b
 
 ## Installation
@@ -48,32 +50,32 @@ For installing from source (not applicable for VSCode)
 - `cd svlangserver && npm install`
   * Update the settings with the correct command (e.g. `/git/repo/path/svlangserver/bin/main.js`)
 
-NOTE: This has been tested with npm version 6.14.11 and node version 14.15.5
+NOTE: This has been tested with npm version 6.14.13 and node version 14.17.1
 
 ## Settings
 - `systemverilog.includeIndexing`: _Array_, Globs defining files to be indexed
 - `systemverilog.libraryIndexing`: _Array_, Globs defining library files to be added to linting. It's useful when module name is not equal to filename.
 - `systemverilog.excludeIndexing`: _Array_, Exclude files from indexing based on glob
 - `systemverilog.linter`: _String_, Select linter
-  * Default: false
+  * Default: _'verilator'_
 - `systemverilog.launchConfiguration`: _String_, Command to run for launching linting
   * Default: _verilator --sv --lint-only --Wall_
   * If not in path, replace _verilator_ with the appropriate command
 - `systemverilog.lintOnUnsaved`: _Boolean_, Lint even unsaved files
-  * Default: *true*
+  * Default: _true_
 - `systemverilog.defines`: _Array_, Defines for the project. Used by the language server as well as linting
-  * Default: empty
+  * Default: _empty_
 - `systemverilog.formatCommand`: _String_, verible-verilog-format command for code formatting
   * Default: _verible-verilog-format_
   * If not in path, replace _verible-verilog-format_ with the appropriate command
 - `systemverilog.disableCompletionProvider`: _Boolean_, Disable auto completion provided by the language server
-  * Default: false
+  * Default: _false_
 - `systemverilog.disableHoverProvider`: _Boolean_, Disable hover over help provided by the language server
-  * Default: false
+  * Default: _false_
 - `systemverilog.disableSignatureHelpProvider`: _Boolean_, Disable signature help provided by the language server
-  * Default: false
+  * Default: _false_
 - `systemverilog.disableLinting`: _Boolean_, Disable linting
-  * Default: false
+  * Default: _false_
 - Example coc.nvim settings file
     ```json
     {
@@ -165,8 +167,50 @@ NOTE: This has been tested with npm version 6.14.11 and node version 14.15.5
     ```
 
 ## Commands
-- `systemverilog.build_index`: Instructs language server to rerun indexing
+* `systemverilog.build_index`: Instructs language server to rerun indexing
+* `systemverilog.report_hierarchy`: Generates hierarchy for the given module
 
+### coc.nvim usage
+  * The commands should be executed using CocRequest function. An example vim command would be:
+  ```vim
+  command! SvBuildIndex call CocRequest("svlangserver", 'workspace/executeCommand', {'command': 'systemverilog.build_index'})
+  command! -range SvReportHierarchy call CocRequest("svlangserver", 'workspace/executeCommand', {'command': 'systemverilog.report_hierarchy', 'arguments': [input('Module/interface: ', <range> == 0 ? "" : expand("<cword>"))]})
+  ```
+  If the above SvReportHierarchy command is called with visual selection, then the module name is pre-filled with the selection. Also depending on the coc.nvim version, the generated rpt.json file might not have the focus and user will have to switch buffer manually.
+
+### VSCode usage
+  * Typing `build index` in the command palette should invoke the build index command.
+  * Typing `get hierarchy` in the command palette should invoke the report hierarchy command. If invoked with an active slection, the module name is pre-filled with the selection.
+
+### Sublime usage
+  * A sublime-commands file needs to be created with the below content
+  ```json
+  [
+    {
+      "caption": "SvLangserver Build Index",
+      "command": "lsp_execute",
+      "args": {
+        "session_name": "svlangserver",
+        "command_name": "systemverilog.build_index",
+        "command_args": []
+      }
+    },
+    {
+      "caption": "Svlangserver Report Hierarchy",
+      "command": "lsp_execute",
+      "args": {
+        "session_name": "svlangserver",
+        "command_name": "systemverilog.report_hierarchy",
+        "command_args": ["${selection}"]
+      }
+    }
+  ]
+  ```
+  This should make the commands available in the command palette. For the report hierarchy command, the module name should be selected before invoking the command.
+
+### Emacs usage
+  * `lsp-clients-svlangserver-build-index` command should rerun the indexing.
+  * `lsp-clients-svlangserver-report-hierarchy` command should do the job. If invoked with an active slection, the module name is pre-filled with the selection.
 
 ## Troubleshooting
 - Editor is not able to find language server binary.
@@ -194,6 +238,13 @@ Although most of the code is written from scratch, this [VSCode-SystemVerilog ex
 
 ## Release Notes
 See the [changelog](CHANGELOG.md) for more details
+
+### 0.4.0
+- Icarus as linting alternative
+- Command for reporting hierarchy
+- Improved hover over formatting
+- Improved symbol resolution
+- Bug fixes
 
 ### 0.3.5
 - Improvements to auto-completion and jump to definition

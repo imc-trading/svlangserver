@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this repository are documented below.
 
+## [0.4.0] - 2022.03.30
+- Support for Icarus as linting alternative
+- Added command for reporting hierarchy
+- Improved hover over text formatting
+- Support symbol resolution in functions and tasks
+- Bug fixes
+  * for [issue #19](https://github.com/imc-trading/svlangserver/issues/19)
+  * Fix verilator crash on linting
+  * Fixed verilator diagnostics column number reporting
+
 ## [0.3.5] - 2021.10.24
 - Extended keyword and snippets completion
 - Jump to definition improvements
