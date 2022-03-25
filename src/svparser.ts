@@ -880,6 +880,7 @@ export class SystemVerilogParser {
 
             let scope: string = this._getElem(this._svtokens[this._currTokenNum].scopes, scopeDepth + 1);
             if ((scope == "operator.open_parantheses.systemverilog") || (scope == "operator.semicolon.systemverilog")) {
+                //ConnectionLogger.log(`DEBUG: Processing routine ${this._svtokens[prevIdToken].text}`);
                 routineSymbol = this._pushContainerSymbol(prevIdToken, [this._svtokens[routineTypeToken].text]);
 
                 if (scope == "operator.open_parantheses.systemverilog") {
@@ -956,6 +957,209 @@ export class SystemVerilogParser {
         return true;
     }
 
+    private _processDimension(): Boolean {
+        let _currTokenNum: number = this._currTokenNum;
+        let scopeDepth: number = this._svtokens[this._currTokenNum].scopes.length - 1;
+
+        this._currTokenNum++;
+        for (; this._currTokenNum < this._svtokens.length; this._currTokenNum++) {
+            let scope: string = this._getElem(this._svtokens[this._currTokenNum].scopes, scopeDepth);
+            if (scope == undefined) {
+                this._currTokenNum = _currTokenNum;
+                return false;
+            }
+            else if (scope != "dimension.expression.systemverilog") {
+                this._currTokenNum--;
+                break;
+            }
+        }
+        if (this._currTokenNum == this._svtokens.length) {
+            this._currTokenNum--;
+        }
+
+        return true;
+    }
+
+    private _processParamPortDeclaration(): Boolean {
+        let _currTokenNum: number = this._currTokenNum;
+        let scopeDepth: number = this._svtokens[this._currTokenNum].scopes.length - 1;
+
+        this._currTokenNum++;
+        let nextToken: number = this._nextNonIgnorableScope();
+        if ((nextToken == undefined) || (this._getElem(this._svtokens[nextToken].scopes, scopeDepth) != "parantheses.begin.systemverilog")) {
+            this._currTokenNum = _currTokenNum;
+            return false;
+        }
+
+        this._currTokenNum++;
+        for (; this._currTokenNum < this._svtokens.length; this._currTokenNum++) {
+            let scope: string = this._getElem(this._svtokens[this._currTokenNum].scopes, scopeDepth);
+            if (scope == undefined) {
+                this._currTokenNum = _currTokenNum;
+                return false;
+            }
+            else if (scope != "parantheses.block.systemverilog") {
+                this._currTokenNum--;
+                break;
+            }
+        }
+        if (this._currTokenNum == this._svtokens.length) {
+            this._currTokenNum--;
+        }
+
+        return true;
+    }
+/*
+= ["const"] ["var"] ["static"|"automatic"] integer_vector_type ["signed"|"unsigned"] {packed_dimension} {list_of_variable_decl_assignments} ";"
+| ["const"] ["var"] ["static"|"automatic"] integer_atom_type ["signed"|unsigned"] {list_of_variable_decl_assignments} ";"
+| ["const"] ["var"] ["static"|"automatic"] non_integer_type {list_of_variable_decl_assignments} ";"
+| ["const"] ["var"] ["static"|"automatic"] struct_union ["packed"] ["signed"|"unsigned"] "{" struct_union_member {"," struct_union_member} "}" {packed_dimension} {list_of_variable_decl_assignments} ";"
+| ["const"] ["var"] ["static"|"automatic"] "string"|"chandle" {list_of_variable_decl_assignments} ";"
+| ["const"] ["var"] ["static"|"automatic"] "virtual" ["interface"] interface_identifier [parameter_value_assignment] ["." modport_identifier] {list_of_variable_decl_assignments} ";"
+| ["const"] ["var"] ["static"|"automatic"] [class_scope|package_scope] type_identifier {packed_dimension} {list_of_variable_decl_assignments} ";"
+| ["const"] ["var"] ["static"|"automatic"] ps_class_identifier [parameter_value_assignment] {"::" class_identifier [parameter_value_asisgnment]} {list_of_variable_decl_assignments} ";"
+| ["const"] ["var"] ["static"|"automatic"] "event" {list_of_variable_decl_assignments} ";"
+| ["const"] ["var"] ["static"|"automatic"] ps_covergroup_identifier {list_of_variable_decl_assignments} ";"
+| ["const"] ["var"] ["static"|"automatic"] "type" "("...")" {list_of_variable_decl_assignments} ";"
+| ["const"] ["var"] ["static"|"automatic"] ["signed"|"unsigned"] {packed_dimension} {list_of_variable_decl_assignments} ";"
+| "typedef" ...
+| "nettype" ...
+*/
+    private _processRoutineVarDeclaration() {
+        let _currTokenNum = this._currTokenNum;
+        let scopeDepth: number = this._svtokens[this._currTokenNum].scopes.length - 1;
+
+        this._printDebugInfo("var declaration");
+        let startToken: number;
+        let prevToken: number;
+        let prevIdToken: number;
+        let anonTypeName: string;
+        let dataTypeToken: number;
+        let waitForEnd: Boolean = false;
+        let symbolPushed: Boolean = false;
+        for (; this._currTokenNum < this._svtokens.length; this._currTokenNum++) {
+            let scope: string = this._getElem(this._svtokens[this._currTokenNum].scopes, scopeDepth);
+            if (scope == undefined) {
+                this._currTokenNum = _currTokenNum;
+                return false;
+            }
+
+            if (this._notIgnorableScope()) {
+                if (this._processPreprocessor() ||
+                    this._processAttributeInstance()) {
+                    continue;
+                }
+
+                if (startToken == undefined) {
+                    startToken = this._currTokenNum;
+                    if (["assign", "unique", "unique0", "priority", "case", "casex", "casez", "if", "void", "disable",
+                         "forever", "repeat", "while", "for", "do", "foreach", "return", "break", "continue", "fork",
+                         "begin", "wait", "wait_order", "assert", "assume", "cover", "restrict", "randcase", "randsequence",
+                         "expect"].indexOf(this._svtokens[startToken].text) >= 0) {
+                        this._currTokenNum = _currTokenNum;
+                        return false;
+                    }
+                }
+
+                if ((scope == "operator.comma.systemverilog") ||
+                    (scope == "operator.semicolon.systemverilog")) {
+                    waitForEnd = false;
+                    if ((prevIdToken != undefined) && (startToken != undefined)) {
+                        if (prevIdToken == startToken) {
+                            this._currTokenNum = _currTokenNum;
+                            return false;
+                        }
+                        let types: string[] = ["variable", anonTypeName || (dataTypeToken == undefined ? this._svtokens[startToken].text : this._svtokens[dataTypeToken].text)];
+                        this._pushSymbol(prevIdToken, types, [startToken, prevToken]); //TBD range
+                        symbolPushed = true;
+                    }
+                    else {
+                        this._currTokenNum = _currTokenNum;
+                        return false;
+                    }
+
+                    prevToken = undefined;
+                    if (scope == "operator.semicolon.systemverilog") {
+                        break;
+                    }
+                }
+                else if (!waitForEnd) {
+                    if (scope == "operator.equals.systemverilog") {
+                        waitForEnd = true;
+                    }
+                    else if (scope == "keyword.struct_union.systemverilog") {
+                        anonTypeName = this._processStructUnionDeclaration();
+                    }
+                    else if (scope == "keyword.enum.systemverilog") {
+                        anonTypeName = this._processEnumDeclaration();
+                    }
+                    else if (scope.startsWith("identifier.") && (this._svtokens[this._currTokenNum].text == "type")) {
+                        anonTypeName = this._processTypeReference();
+                    }
+                    else if (scope.startsWith("identifier.")) {
+                        dataTypeToken = prevIdToken;
+                        prevIdToken = this._currTokenNum;
+                    }
+                    else if (scope == "operator.open_bracket.systemverilog") {
+                        if (!this._processDimension()) {
+                            this._currTokenNum = _currTokenNum;
+                            return false;
+                        }
+                    }
+                    else if ((scope == "operator.other.systemverilog") && (this._svtokens[this._currTokenNum].text == "#")) {
+                        if (!this._processParamPortDeclaration()) {
+                            this._currTokenNum = _currTokenNum;
+                            return false;
+                        }
+                    }
+                    else if (symbolPushed) {
+                        this._ignoreTillSemiColon();
+                        return true;
+                    }
+                    else {
+                        this._currTokenNum = _currTokenNum;
+                        return false;
+                    }
+                }
+                prevToken = this._currTokenNum;
+            }
+        }
+        if (this._currTokenNum == this._svtokens.length) {
+            this._currTokenNum--;
+        }
+
+        return true;
+    }
+
+    private _processRoutineBody() {
+        this._currTokenNum++;
+        for(; this._currTokenNum < this._svtokens.length; this._currTokenNum++) {
+            let scope:string = this._getElem(this._svtokens[this._currTokenNum].scopes);
+            if (this._notIgnorableScope()) {
+                //ConnectionLogger.log(`DEBUG: Routine body parsing at ${this._svtokens[this._currTokenNum].text}`);
+                if ((scope == "identifier.simple.systemverilog") &&
+                    ((this._svtokens[this._currTokenNum].text == "endfunction") || (this._svtokens[this._currTokenNum].text == "endtask"))) {
+                    this._containerStack.pop(this._getEndPosition());
+                    break;
+                }
+
+                if (!this._processRoutineVarDeclaration() &&
+                    !this._processParamDeclaration()) {
+                    //ConnectionLogger.log(`DEBUG: Routine ignoring statement at ${this._svtokens[this._currTokenNum].text}`);
+                    this._currTokenNum--;
+                    this._ignoreStatement();
+                    continue;
+                }
+            }
+        }
+        if (this._currTokenNum == this._svtokens.length) {
+            this._currTokenNum--;
+        }
+        else {
+            this._processEndIdentifier();
+        }
+    }
+
     private _processRoutine(): Boolean {
         let startToken: number = this._currTokenNum;
         let scopeDepth: number = this._svtokens[startToken].scopes.length - 1;
@@ -965,20 +1169,7 @@ export class SystemVerilogParser {
 
         this._printDebugInfo("routine");
         this._processRoutineHeader();
-        for(; this._currTokenNum < this._svtokens.length; this._currTokenNum++) {
-            let scope:string = this._getElem(this._svtokens[this._currTokenNum].scopes);
-            if ((scope == "identifier.simple.systemverilog") &&
-                ((this._svtokens[this._currTokenNum].text == "endfunction") || (this._svtokens[this._currTokenNum].text == "endtask"))) {
-                this._containerStack.pop(this._getEndPosition());
-                break;
-            }
-        }
-        if (this._currTokenNum == this._svtokens.length) {
-            this._currTokenNum--;
-        }
-        else {
-            this._processEndIdentifier();
-        }
+        this._processRoutineBody();
 
         return true;
     }
@@ -2464,6 +2655,7 @@ export class SystemVerilogParser {
 
                 if ((scope == "operator.comma.systemverilog") ||
                     (scope == "operator.semicolon.systemverilog")) {
+                    waitForEnd = false;
                     if ((prevIdToken != undefined) && (startToken != undefined)) {
                         if (prevIdToken == startToken) {
                             //unnamed instantiation
