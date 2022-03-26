@@ -172,6 +172,10 @@
             {
                 "command": "systemverilog.build_index",
                 "title": "SystemVerilog: Build index of modules in workspace"
+            },
+            {
+                "command": "systemverilog.get_hierarchy",
+                "title": "SystemVerilog: Get hierarchy of instances for a given top module"
             }
         ],
         "jsonValidation": [

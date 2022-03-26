@@ -3103,6 +3103,19 @@ export namespace SystemVerilogParser {
         }
     }
 
+    export function findFileContainer(fileSymbolsInfo: SystemVerilogFileSymbolsInfo[], cntnrName: string): SystemVerilogContainerInfo {
+        try {
+            if ((fileSymbolsInfo.length > FileInfoIndex.Containers) &&
+                (fileSymbolsInfo[FileInfoIndex.Containers] != undefined)) {
+                return (<SystemVerilogContainersInfo>(fileSymbolsInfo[FileInfoIndex.Containers])).find(cntnr => { return cntnr[0][0].name == cntnrName; });
+            }
+            return undefined;
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return undefined;
+        }
+    }
+
     export function findContainerSymbol(containerSymbolsInfo: SystemVerilogContainerSymbolsInfo[], symbolName: string, findContainer: Boolean): SystemVerilogSymbol | SystemVerilogContainerInfo {
         try {
             if (!findContainer &&
@@ -3150,6 +3163,20 @@ export namespace SystemVerilogParser {
         } catch(error) {
             ConnectionLogger.error(error);
             return undefined;
+        }
+    }
+
+    export function getInstSymbolsInContainer(containerSymbolsInfo: SystemVerilogContainerSymbolsInfo[]): SystemVerilogSymbol[] {
+        try {
+            let instSymbols: SystemVerilogSymbol[] = [];
+            if ((containerSymbolsInfo.length > ContainerInfoIndex.Symbols) &&
+                (containerSymbolsInfo[ContainerInfoIndex.Symbols] != undefined)) {
+                instSymbols = (<SystemVerilogSymbol[]>(containerSymbolsInfo[ContainerInfoIndex.Symbols])).filter(sym => sym.type[0] == "instance");
+            }
+            return instSymbols;
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return [];
         }
     }
 

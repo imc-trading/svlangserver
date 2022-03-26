@@ -1526,4 +1526,31 @@ export class SystemVerilogIndexer {
         }
         return [undefined, undefined];
     }
+
+    public getHier(cntnrName: string) {
+        let cntnrHier = {};
+        let cntnrType: string;
+        let cntnrFilePath: string;
+        if (this._moduleToFiles.has(cntnrName)) {
+            cntnrType = "module";
+            cntnrFilePath = [...this._moduleToFiles.get(cntnrName)][0];
+        }
+        else if (this._interfaceToFiles.has(cntnrName)) {
+            cntnrType = "interface";
+            cntnrFilePath = [...this._interfaceToFiles.get(cntnrName)][0];
+        }
+        if (!!cntnrType && !!cntnrFilePath && this._indexedFilesInfo.has(cntnrFilePath)) {
+            cntnrHier[cntnrType] = cntnrName;
+            cntnrHier["file"] = cntnrFilePath;
+            let cntnrInfo: SystemVerilogParser.SystemVerilogContainerInfo = SystemVerilogParser.findFileContainer(this._indexedFilesInfo.get(cntnrFilePath).symbolsInfo, cntnrName);
+            let cntnrInstances: SystemVerilogSymbol[] = SystemVerilogParser.getInstSymbolsInContainer(cntnrInfo[1]);
+            if (cntnrInstances.length > 0) {
+                cntnrHier["instances"] = {};
+            }
+            for (let symbol of cntnrInstances) {
+                cntnrHier["instances"][symbol.name] = this.getHier(symbol.type[1]);
+            }
+        }
+        return cntnrHier;
+    }
 }

@@ -1,5 +1,5 @@
-import { DocumentSelector, ExtensionContext, workspace } from 'vscode';
-import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind } from 'vscode-languageclient';
+import { commands, DocumentSelector, ExtensionContext, window, workspace } from 'vscode';
+import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind } from 'vscode-languageclient/node';
 import { default_settings } from './svutils';
 import * as path from 'path';
 
@@ -43,6 +43,25 @@ export function activate(context: ExtensionContext) {
     // For debugging only
     //client.trace = Trace.Verbose;
 
+    let getHierCmdHandler = () => {
+        let selectedText: string;
+        let editor = window.activeTextEditor;
+        if (!!editor) {
+            selectedText = editor.document.getText(editor.selection);
+        }
+
+        window.showInputBox({
+            placeHolder: "Module/interface Name",
+            prompt: "Hierarchy to be reported for module/interface",
+            value: selectedText
+        }).then((cntnrName: string) => {
+            if (!!cntnrName) {
+                client.sendRequest('workspace/executeCommand', {'command': 'systemverilog.report_hierarchy', 'arguments': [cntnrName]});
+            }
+        });
+    };
+
+    context.subscriptions.push(commands.registerCommand('systemverilog.get_hierarchy', getHierCmdHandler));
     context.subscriptions.push(client.start());
 
     client.onReady().then(() => {
