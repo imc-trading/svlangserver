@@ -421,7 +421,7 @@ export class SystemVerilogIndexer {
     private _generateVerilatorOptionsFile() {
         this._optionsFileContent = [];
         for (let [file, rank] of [...[...this._indexedFilesInfo.entries()].filter(a => a[1].pkgdeps != null)].sort((a, b) => a[1].rank <= b[1].rank ? 1 : -1)) {
-            this._optionsFileContent.push(file);
+            this._optionsFileContent.push('-v ' + file);
         }
         for (let libfile of [...new Set(this._libFiles.values())]) {
             this._optionsFileContent.push('-v ' + libfile);

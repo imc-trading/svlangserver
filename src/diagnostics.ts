@@ -60,16 +60,24 @@ function parseVerilatorDiagnostics(stdout: string, stderr: string, file: string,
             }
             message = terms[6];
 
+            let messageWhiteListed: Boolean = false;
             for (let whitelistedMessage of whitelistedMessages) {
                 if (message.search(whitelistedMessage) >= 0) {
-                    return;
+                    messageWhiteListed = true;
+                    break;
                 }
+            }
+            if (messageWhiteListed) {
+                continue;
             }
 
             // Match the ^~~~~~~ under the error message
             if (/\s*\^~+/.exec(lines[i + 2])) {
-                colNum = lines[i + 2].indexOf('^')
-                colNumEnd = lines[i + 2].lastIndexOf('~')
+                let startColNum: number = lines[i + 2].indexOf('|') + 2;
+                colNum = lines[i + 2].indexOf('^');
+                colNum = colNum > startColNum ? colNum - startColNum : colNum;
+                colNumEnd = lines[i + 2].lastIndexOf('~');
+                colNumEnd = colNumEnd > startColNum ? colNumEnd - startColNum : colNumEnd;
                 i += 2;
             }
 
@@ -122,10 +130,15 @@ function parseIcarusDiagnostics (stdout: string, stderr: string, file: string, w
             let severity = getIcarusSeverity(terms[3], message);
             let lineNum = parseInt(terms[2]) - 1;
 
+            let messageWhiteListed: Boolean = false;
             for (let whitelistedMessage of whitelistedMessages) {
                 if (message.search(whitelistedMessage) >= 0) {
-                    return;
+                    messageWhiteListed = true;
+                    break;
                 }
+            }
+            if (messageWhiteListed) {
+                continue;
             }
 
             if (lineNum != NaN) {
@@ -230,7 +243,7 @@ export class VerilogDiagnostics {
 
             let definesArg: string = this._defines.length > 0 ? this._defines.map(d => ` +define+${d}`).join('') : "";
             let optionsFileArg: string = optionsFile ? ' -f ' + optionsFile : "";
-            let actFileArg: string = (this._indexer.fileHasPkg(file)) ? "" : " " + actFile;
+            let actFileArg: string = " " + actFile;
             let command: string = this._command + definesArg + optionsFileArg + actFileArg;
             let statusRef: [Boolean] = [true];
             //ConnectionLogger.log(`DEBUG: verilator command ${command}`);
