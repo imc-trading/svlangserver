@@ -1,4 +1,4 @@
-import { TextDocument, Location, Range, Position } from "vscode-languageserver";
+import { TextDocument, Location, Range, Position } from "vscode-languageserver/node";
 
 import {
     ConnectionLogger,

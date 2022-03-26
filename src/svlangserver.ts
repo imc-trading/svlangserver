@@ -19,7 +19,7 @@ import {
     TextDocumentPositionParams,
     TextDocumentSyncKind,
     WorkspaceSymbolParams
-} from 'vscode-languageserver';
+} from 'vscode-languageserver/node';
 
 import {
     TextDocument

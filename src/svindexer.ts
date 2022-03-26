@@ -1,6 +1,6 @@
 import {
     SymbolInformation,
-} from 'vscode-languageserver';
+} from 'vscode-languageserver/node';
 
 import {
     Location,

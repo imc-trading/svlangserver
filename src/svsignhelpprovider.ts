@@ -1,6 +1,6 @@
 import {
     SignatureHelp
-} from 'vscode-languageserver';
+} from 'vscode-languageserver/node';
 
 import {
     TextDocument

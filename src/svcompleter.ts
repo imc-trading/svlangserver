@@ -3,7 +3,7 @@ import {
     CompletionItemKind,
     InsertTextFormat,
     Position
-} from 'vscode-languageserver';
+} from 'vscode-languageserver/node';
 
 import {
     TextDocument

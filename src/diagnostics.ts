@@ -2,7 +2,7 @@ import {
     DiagnosticSeverity,
     Diagnostic,
     Range
-} from "vscode-languageserver";
+} from "vscode-languageserver/node";
 
 import {
     SystemVerilogIndexer
@@ -54,7 +54,7 @@ function parseVerilatorDiagnostics(stdout: string, stderr: string, file: string,
             let message = "";
             let lineNum = parseInt(terms[4]) - 1;
             let colNum = 0;
-            let colNumEnd = Number.MAX_VALUE
+            let colNumEnd = 0;
             if (terms[5]) {
                 colNum = parseInt(terms[5]) - 1;
             }
@@ -81,11 +81,10 @@ function parseVerilatorDiagnostics(stdout: string, stderr: string, file: string,
                 i += 2;
             }
 
-
             if ((lineNum != NaN) && (colNum != NaN)) {
                 diagnostics.push({
                     severity: severity,
-                    range: Range.create(lineNum, colNum, lineNum, colNumEnd),
+                    range: Range.create(lineNum, colNum, lineNum, colNumEnd < colNum ? colNum : colNumEnd),
                     message: message,
                     code: 'verilator',
                     source: 'verilator'
@@ -144,7 +143,7 @@ function parseIcarusDiagnostics (stdout: string, stderr: string, file: string, w
             if (lineNum != NaN) {
                 diagnostics.push({
                     severity: severity,
-                    range: Range.create(lineNum, 0, lineNum, Number.MAX_VALUE),
+                    range: Range.create(lineNum, 0, lineNum, 0),
                     message: message,
                     code: 'iverilog',
                     source: 'iverilog'

@@ -1,7 +1,7 @@
 import {
     LogMessageNotification,
     MessageType
-} from 'vscode-languageserver';
+} from 'vscode-languageserver/node';
 
 import {
     URI

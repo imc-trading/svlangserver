@@ -5,7 +5,7 @@ import {
     SymbolInformation,
     SymbolKind,
     TextDocument
-} from "vscode-languageserver";
+} from "vscode-languageserver/node";
 
 import {
     ConnectionLogger,
