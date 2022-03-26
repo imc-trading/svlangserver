@@ -7,6 +7,8 @@ import {
     URI
 } from 'vscode-uri';
 
+import * as child from 'child_process';
+
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
@@ -189,3 +191,97 @@ export function childProcessStderrRedir(data) {
         return;
     }
 }
+
+type TimerType = ReturnType<typeof setTimeout>;
+
+export class DelayedCaller {
+    private _callWaiting: Map<string, [TimerType, any]> = new Map();
+    private _timeOut: number;
+
+    constructor(timeOut: number = 1000) {
+        this._timeOut = timeOut;
+    }
+
+    public run(callName: string, successCallback: (success: Boolean) => any, errorCallback: (error: string) => any) {
+        if (this._callWaiting.has(callName)) {
+            let [waitTimer, resolver] = this._callWaiting.get(callName);
+            clearTimeout(waitTimer);
+            resolver(false);
+        }
+
+        return new Promise(resolve => {
+            this._callWaiting.set(callName, [setTimeout(resolve, this._timeOut, true), resolve]);
+        }).then((success) => {
+            if (!!success) {
+                this._callWaiting.delete(callName);
+            }
+            return successCallback(!!success);
+        }).catch(error => {
+            return errorCallback(error);
+        });
+    }
+}
+
+export class ChildProcManager {
+    private _alreadyRunning: Map<string, [child.ChildProcess, [Boolean]]> = new Map();
+
+    public kill(key: string) {
+        if (this._alreadyRunning.has(key)) {
+            //ConnectionLogger.log(`DEBUG: Killing already running command to start a new one`);
+            let [proc, statusRef] = this._alreadyRunning.get(key);
+            statusRef[0] = false;
+            proc.kill();
+        }
+    }
+
+    public run(key: string, command: string, callBack: (status, error, stdout, stderr) => any) {
+        let statusRef: [Boolean] = [true];
+        this._alreadyRunning.set(key, [
+            child.exec(command, (error, stdout, stderr) => {
+                if (statusRef[0]) {
+                    this._alreadyRunning.delete(key);
+                }
+                callBack(statusRef[0], error, stdout, stderr);
+            }),
+            statusRef
+        ]);
+    }
+}
+
+class TmpFileManager {
+    private _tmpDir;
+    private _freeTmpFileNums: Map<string, {total: number, nums: number[]}> = new Map();
+
+    constructor() {
+        this._tmpDir = getTmpDirSync();
+    }
+
+    public getTmpFilePath(...elems: string[]): string {
+        return path.join(this._tmpDir.name, ...elems);
+    }
+
+    public cleanupTmpFiles() {
+        this._tmpDir.removeCallback();
+    }
+
+    public getFreeTmpFileNum(key: string): number {
+        if (!this._freeTmpFileNums.has(key)) {
+            this._freeTmpFileNums.set(key, {total: 0, nums: []});
+        }
+        if (this._freeTmpFileNums.get(key).nums.length <= 0) {
+            this._freeTmpFileNums.get(key).nums.push(this._freeTmpFileNums.get(key).total++);
+        }
+        return this._freeTmpFileNums.get(key).nums.shift();
+    }
+
+    public returnFreeTmpFileNum(key: string, tmpFileNum: number) {
+        if (this._freeTmpFileNums.has(key)) {
+            this._freeTmpFileNums.get(key).nums.push(tmpFileNum);
+        }
+        else {
+            ConnectionLogger.error(`FreeTmpFileNums doesn't have the key ${key}`);
+        }
+    }
+}
+
+export let tmpFileManager = new TmpFileManager();
