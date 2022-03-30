@@ -959,7 +959,7 @@ export class SystemVerilogIndexer {
         let sym: SystemVerilogSymbol;
         let filePath: string;
         [filePath, sym] = this._getContainerSymbol(this._pkgToFiles, pkgName);
-        return [filePath, sym];
+        return [filePath == undefined ? filePath : pathToUri(filePath), sym];
     }
 
     private _findPackageSymbol(pkgName: string, unscopedSymbolName: string, findContainer: Boolean): [string, SystemVerilogSymbol, SystemVerilogParser.SystemVerilogContainerSymbolsInfo[]] {
@@ -1521,7 +1521,7 @@ export class SystemVerilogIndexer {
             [actFilePath, preprocIncInfo,] = this._preprocCache.get(filePath);
             let symbol: SystemVerilogSymbol = preprocIncInfo.symbols.find(s => s.type.indexOf("includefile") >= 0);
             if (symbol) {
-                return [actFilePath, symbol];
+                return [pathToUri(actFilePath), symbol];
             }
         }
         return [undefined, undefined];

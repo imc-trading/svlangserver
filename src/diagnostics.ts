@@ -190,7 +190,8 @@ export class VerilogDiagnostics {
     private _lintImmediate(file: string, text?: string): Promise<Diagnostic[]> {
         this._childProcMngr.kill(file);
         return new Promise((resolve, reject) => {
-            let actFile: string = text == undefined ? file : tmpFileManager.getTmpFilePath("sources", file);
+            let fileWithoutRoot: string = file.slice(path.parse(file).root.length);
+            let actFile: string = text == undefined ? file : tmpFileManager.getTmpFilePath("sources", fileWithoutRoot);
             let optionsFile: string = this._optionsFile;
             let vcTmpFileNum: number;
             if (text != undefined) {

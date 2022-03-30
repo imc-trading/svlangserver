@@ -24,7 +24,9 @@ import {
 } from './grammar_engine';
 
 import {
-    ConnectionLogger
+    ConnectionLogger,
+    pathToUri,
+    uriToPath
 } from './genutils';
 
 export class SystemVerilogDefinitionProvider {
@@ -203,7 +205,11 @@ export class SystemVerilogDefinitionProvider {
                 }
 
                 filePath = this._indexer.getInstFilePath(svtokens[tokenNum].text);
-                return [filePath, symbol];
+                if (filePath == undefined) {
+                    return [undefined, undefined];
+                }
+
+                return [pathToUri(filePath), symbol];
             }
 
             return [filePath, symbol];
@@ -282,7 +288,7 @@ export class SystemVerilogDefinitionProvider {
                 code = '';
             }
             else {
-                header = (document.uri == symbolInfo[0]) ? '' : `File: ${symbolInfo[0]}`;
+                header = (document.uri == symbolInfo[0]) ? '' : `File: ${uriToPath(symbolInfo[0])}`;
                 code = (<SystemVerilogSymbol>(symbolInfo[1])).getDefinition(symbolInfo[0]);
             }
 
