@@ -236,7 +236,11 @@ export class SystemVerilogDefinitionProvider {
             let filePath: string;
             let symbol: SystemVerilogSymbol;
             let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[];
-            [filePath, symbol, containerSymbolsInfo] = this._indexer.getContainerInfo(this._indexer.getInstFilePath(containerName), containerName);
+            let instFilePath: string = this._indexer.getInstFilePath(containerName);
+            if (instFilePath == undefined) {
+                return [undefined, undefined];
+            }
+            [filePath, symbol, containerSymbolsInfo] = this._indexer.getContainerInfo(pathToUri(instFilePath), containerName);
             if ((filePath == undefined) || (symbol == undefined) || (containerSymbolsInfo == undefined) ||
                 (containerSymbolsInfo.length <= SystemVerilogParser.ContainerInfoIndex.Symbols) ||
                 (containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols] == undefined)) {

@@ -1139,7 +1139,7 @@ export class SystemVerilogIndexer {
                         let resolvedPkgSymNames: [string, string[]][] = this._resolveImportsIntoSymbolNames(cntnrImports);
                         for (let pkgSymNames of resolvedPkgSymNames) {
                             let symIndx: number = pkgSymNames[1].indexOf(symbolName);
-                            if (symIndx > 0) {
+                            if (symIndx >= 0) {
                                 [scopedFile, scopedSymbol] = this._findPackageSymbol(pkgSymNames[0], symbolName, false);
                                 break;
                             }
@@ -1438,8 +1438,9 @@ export class SystemVerilogIndexer {
         //   else
         //      append the import to result
         let symbolNames: [string, string[]][] = [];
-        while (importsInfo.length > 0) {
-            let importItem: SystemVerilogParser.SystemVerilogImportInfo = importsInfo.shift();
+        let _importsInfo: SystemVerilogParser.SystemVerilogImportsInfo = [...importsInfo];
+        while (_importsInfo.length > 0) {
+            let importItem: SystemVerilogParser.SystemVerilogImportInfo = _importsInfo.shift();
             if ((importItem[1].length == 1) &&
                 (importItem[1][0] == "*")) {
                 if (this._pkgToFiles.has(importItem[0])) {
@@ -1474,11 +1475,11 @@ export class SystemVerilogIndexer {
                                 let containerExportsInfo: SystemVerilogParser.SystemVerilogExportsInfo = SystemVerilogParser.containerExports(pkgContainer[1]);
                                 for (let exportItem of containerExportsInfo) {
                                     if (exportItem[0] == "*") {
-                                        importsInfo.unshift(...SystemVerilogParser.containerImports(pkgContainer[1]));
+                                        _importsInfo.unshift(...SystemVerilogParser.containerImports(pkgContainer[1]));
                                     }
                                     else if ((exportItem[1].length == 1) &&
                                              (exportItem[1][0] == "*")) {
-                                        importsInfo.unshift(exportItem);
+                                        _importsInfo.unshift(exportItem);
                                     }
                                     else {
                                         symbolNames.push(exportItem);
