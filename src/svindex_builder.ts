@@ -51,12 +51,12 @@ process.on('message', (args) => {
                 fsReadFile(file)
                     .then((data) => {
                         let document: TextDocument = TextDocument.create(pathToUri(file), "SystemVerilog", 0, data.toString());
-                        let fileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo[];
+                        let fileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo;
                         let pkgdeps: string[];
                         [fileSymbolsInfo, pkgdeps] = _parser.parse(document, _includeFilePaths, _includeCache, _userDefinesMacroInfo, "full");
                         //DBG let symbols: SystemVerilogSymbol[] = SystemVerilogParser.fileAllSymbols(fileSymbolsInfo, false);
                         //DBG ConnectionLogger.log(`DEBUG: Sending ${symbols.length} symbols and ${pkgdeps.length} pkgdeps for ${file}`);
-                        process.send([fileSymbolsInfo, pkgdeps]);
+                        process.send([SystemVerilogParser.fileSymbolsInfoToJson(fileSymbolsInfo), pkgdeps]);
                     })
                     .catch((err) => {
                         process.send([[], []]);
