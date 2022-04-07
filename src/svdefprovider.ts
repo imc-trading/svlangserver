@@ -217,15 +217,14 @@ export class SystemVerilogDefinitionProvider {
         else if (isRoutine) {
             let filePath: string;
             let symbol: SystemVerilogSymbol;
-            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[];
+            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo;
             [filePath, symbol, containerSymbolsInfo] = this._indexer.getContainerInfo(document.uri, containerName);
             if ((filePath == undefined) || (symbol == undefined) || (containerSymbolsInfo == undefined) ||
-                (containerSymbolsInfo.length <= SystemVerilogParser.ContainerInfoIndex.Symbols) ||
-                (containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols] == undefined)) {
+                (containerSymbolsInfo.symbolsInfo == undefined)) {
                 return [undefined, undefined];
             }
 
-            let argSymbols: SystemVerilogSymbol[] = <SystemVerilogSymbol[]>(containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols]);
+            let argSymbols: SystemVerilogSymbol[] = containerSymbolsInfo.symbolsInfo;
             let filteredArgSymbols: SystemVerilogSymbol[] = argSymbols.filter(sym => { return sym.name == svtokens[tokenNum].text; });
             if (filteredArgSymbols.length > 0) {
                 return [filePath, filteredArgSymbols[0]];
@@ -235,19 +234,18 @@ export class SystemVerilogDefinitionProvider {
         else {
             let filePath: string;
             let symbol: SystemVerilogSymbol;
-            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[];
+            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo;
             let instFilePath: string = this._indexer.getInstFilePath(containerName);
             if (instFilePath == undefined) {
                 return [undefined, undefined];
             }
             [filePath, symbol, containerSymbolsInfo] = this._indexer.getContainerInfo(pathToUri(instFilePath), containerName);
             if ((filePath == undefined) || (symbol == undefined) || (containerSymbolsInfo == undefined) ||
-                (containerSymbolsInfo.length <= SystemVerilogParser.ContainerInfoIndex.Symbols) ||
-                (containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols] == undefined)) {
+                (containerSymbolsInfo.symbolsInfo == undefined)) {
                 return [undefined, undefined];
             }
 
-            let containerSymbols: SystemVerilogSymbol[] = <SystemVerilogSymbol[]>(containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols]);
+            let containerSymbols: SystemVerilogSymbol[] = containerSymbolsInfo.symbolsInfo;
             let filteredContainerSymbols: SystemVerilogSymbol[] = containerSymbols.filter(sym => { return (sym.name == svtokens[tokenNum].text) && ((sym.type[0] == "port") || (sym.type[0] == "parameter-port")); });
             if (filteredContainerSymbols.length > 0) {
                 return [filePath, filteredContainerSymbols[0]];

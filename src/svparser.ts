@@ -36,57 +36,36 @@ class ParseToken {
     endTokenIndex: number;
 }
 
-function _initContainerSymbols(containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[], index: SystemVerilogParser.ContainerInfoIndex, entries?: SystemVerilogParser.SystemVerilogContainerSymbolsInfo) {
-    for (let i: number = containerSymbolsInfo.length; i < index; i++) {
-        containerSymbolsInfo.push(undefined);
-    }
-
-    if (containerSymbolsInfo.length == index) {
-        containerSymbolsInfo.push(entries == undefined ? [] : entries);
-    }
-    else {
-        containerSymbolsInfo[index] = entries == undefined ? [] : entries;
-    }
-}
-
-function _jsonToContainerSymbolsInfo(file: string, jsonContainerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfoJSON[]): SystemVerilogParser.SystemVerilogContainerSymbolsInfo[] {
-    let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[] = [];
+function _jsonToContainerSymbolsInfo(file: string, jsonContainerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfoJSON[]): SystemVerilogParser.SystemVerilogContainerSymbolsInfo {
+    let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = {};
 
     if (jsonContainerSymbolsInfo.length > SystemVerilogParser.ContainerInfoIndex.Symbols) {
-        _initContainerSymbols(containerSymbolsInfo, SystemVerilogParser.ContainerInfoIndex.Symbols);
-        if (jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols] == undefined) {
-            containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols] = undefined;
-        }
-        else {
+        if (jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols] != undefined) {
+            containerSymbolsInfo.symbolsInfo = [];
             for (let symbol of <SystemVerilogParser.SystemVerilogSymbolsInfoJSON>(jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols])) {
-                (<SystemVerilogParser.SystemVerilogSymbolsInfo>(containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols])).push(SystemVerilogSymbol.fromJSON(file, symbol));
+                containerSymbolsInfo.symbolsInfo.push(SystemVerilogSymbol.fromJSON(file, symbol));
             }
         }
     }
 
     if (jsonContainerSymbolsInfo.length > SystemVerilogParser.ContainerInfoIndex.Imports) {
-        _initContainerSymbols(containerSymbolsInfo, SystemVerilogParser.ContainerInfoIndex.Imports);
-        containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Imports] = <SystemVerilogParser.SystemVerilogImportsInfo>(jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Imports]);
+        containerSymbolsInfo.importsInfo = <SystemVerilogParser.SystemVerilogImportsInfo>(jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Imports]);
     }
 
     if (jsonContainerSymbolsInfo.length > SystemVerilogParser.ContainerInfoIndex.Containers) {
-        _initContainerSymbols(containerSymbolsInfo, SystemVerilogParser.ContainerInfoIndex.Containers);
-        if (jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Containers] == undefined) {
-            containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Containers] = undefined;
-        }
-        else {
-            for (let jsonContainerInfo of jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Containers]) {
-                (<SystemVerilogParser.SystemVerilogContainersInfo>(containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Containers])).push([
-                    [SystemVerilogSymbol.fromJSON(file, <SystemVerilogSymbolJSON>(jsonContainerInfo[0][0])), undefined],
-                    _jsonToContainerSymbolsInfo(file, <SystemVerilogParser.SystemVerilogContainerSymbolsInfoJSON[]>(jsonContainerInfo[1]))
+        if (jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Containers] != undefined) {
+            containerSymbolsInfo.containersInfo = [];
+            for (let jsonContainerInfo of (<SystemVerilogParser.SystemVerilogContainersInfoJSON>(jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Containers]))) {
+                containerSymbolsInfo.containersInfo.push([
+                    [SystemVerilogSymbol.fromJSON(file, jsonContainerInfo[0][0]), jsonContainerInfo[0][1]],
+                    _jsonToContainerSymbolsInfo(file, jsonContainerInfo[1])
                 ]);
             }
         }
     }
 
     if (jsonContainerSymbolsInfo.length > SystemVerilogParser.ContainerInfoIndex.Exports) {
-        _initContainerSymbols(containerSymbolsInfo, SystemVerilogParser.ContainerInfoIndex.Exports);
-        containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Exports] = <SystemVerilogParser.SystemVerilogExportsInfo>(jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Exports]);
+        containerSymbolsInfo.exportsInfo = <SystemVerilogParser.SystemVerilogExportsInfo>(jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Exports]);
     }
 
     return containerSymbolsInfo;
@@ -116,12 +95,11 @@ class ContainerStack {
             containerSymbols = this._stack[0].containersInfo;
         }
         else {
-            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[] = this._stack[1][this._stack[1].length - 1][1];
-            if ((containerSymbolsInfo.length <= SystemVerilogParser.ContainerInfoIndex.Containers) ||
-                (containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Containers] == undefined)) {
-                _initContainerSymbols(containerSymbolsInfo, SystemVerilogParser.ContainerInfoIndex.Containers);
+            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = this._stack[1][this._stack[1].length - 1][1];
+            if (containerSymbolsInfo.containersInfo == undefined) {
+                containerSymbolsInfo.containersInfo = [];
             }
-            containerSymbols = <SystemVerilogParser.SystemVerilogContainersInfo>(containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Containers]);
+            containerSymbols = containerSymbolsInfo.containersInfo;
         }
 
         let containerInfo: SystemVerilogParser.SystemVerilogContainerInfo;
@@ -134,7 +112,7 @@ class ContainerStack {
         }
         else {
             this._symbolMap.set(symbolStr, containerSymbols.length);
-            containerInfo = [[symbol, undefined], []];
+            containerInfo = [[symbol, undefined], {}];
             containerSymbols.push(containerInfo);
             resSymbol = symbol;
         }
@@ -152,12 +130,11 @@ class ContainerStack {
             symbols = this._stack[0].symbolsInfo;
         }
         else {
-            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[] = this._stack[1][this._stack[1].length - 1][1];
-            if ((containerSymbolsInfo.length <= SystemVerilogParser.ContainerInfoIndex.Symbols) ||
-                (containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols] == undefined)) {
-                _initContainerSymbols(containerSymbolsInfo, SystemVerilogParser.ContainerInfoIndex.Symbols);
+            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = this._stack[1][this._stack[1].length - 1][1];
+            if (containerSymbolsInfo.symbolsInfo == undefined) {
+                containerSymbolsInfo.symbolsInfo = [];
             }
-            symbols = <SystemVerilogParser.SystemVerilogSymbolsInfo>(containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols]);
+            symbols = containerSymbolsInfo.symbolsInfo;
         }
 
         let symbolStr: string = [symbol.name, ...symbol.type, ...this.toStringList()].join(' ');
@@ -215,12 +192,11 @@ class ContainerStack {
             importsInfo = this._stack[0].importsInfo;
         }
         else {
-            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[] = this._stack[1][this._stack[1].length - 1][1];
-            if ((containerSymbolsInfo.length <= SystemVerilogParser.ContainerInfoIndex.Imports) ||
-                (containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Imports] == undefined)) {
-                _initContainerSymbols(containerSymbolsInfo, SystemVerilogParser.ContainerInfoIndex.Imports);
+            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = this._stack[1][this._stack[1].length - 1][1];
+            if (containerSymbolsInfo.importsInfo == undefined) {
+                containerSymbolsInfo.importsInfo = [];
             }
-            importsInfo = <SystemVerilogParser.SystemVerilogImportsInfo>(containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Imports]);
+            importsInfo = containerSymbolsInfo.importsInfo;
         }
 
         if (importInfo[2] == undefined) {
@@ -262,12 +238,11 @@ class ContainerStack {
             exportsInfo = this._stack[0].exportsInfo;
         }
         else {
-            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[] = this._stack[1][this._stack[1].length - 1][1];
-            if ((containerSymbolsInfo.length <= SystemVerilogParser.ContainerInfoIndex.Exports) ||
-                (containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Exports] == undefined)) {
-                _initContainerSymbols(containerSymbolsInfo, SystemVerilogParser.ContainerInfoIndex.Exports);
+            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = this._stack[1][this._stack[1].length - 1][1];
+            if (containerSymbolsInfo.exportsInfo == undefined) {
+                containerSymbolsInfo.exportsInfo = [];
             }
-            exportsInfo = <SystemVerilogParser.SystemVerilogExportsInfo>(containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Exports]);
+            exportsInfo = containerSymbolsInfo.exportsInfo;
         }
 
         if (exportInfo[2] == undefined) {
@@ -300,34 +275,41 @@ export class SystemVerilogParser {
     private _containerStack: ContainerStack;
     private _currTokenNum: number;
 
-    private _debugContainerInfo(containerInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[], symIndex: number) {
-        if ((containerInfo.length <= symIndex) ||
-            (containerInfo[symIndex] == undefined)) {
-            return;
-        }
-
+    private _debugContainerInfo(containerInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo, symIndex: number) {
         if (symIndex == SystemVerilogParser.ContainerInfoIndex.Symbols) {
-            for (let symbol of <SystemVerilogParser.SystemVerilogSymbolsInfo>(containerInfo[SystemVerilogParser.ContainerInfoIndex.Symbols])) {
+            if (containerInfo.symbolsInfo == undefined) {
+                return;
+            }
+            for (let symbol of containerInfo.symbolsInfo) {
                 ConnectionLogger.log(`DEBUG: symbol "${symbol.name}" of type ${symbol.type}`);
             }
         }
         else if (symIndex == SystemVerilogParser.ContainerInfoIndex.Imports) {
-            for (let importItem of <SystemVerilogParser.SystemVerilogImportsInfo>(containerInfo[SystemVerilogParser.ContainerInfoIndex.Imports])) {
+            if (containerInfo.importsInfo == undefined) {
+                return;
+            }
+            for (let importItem of containerInfo.importsInfo) {
                 ConnectionLogger.log(`DEBUG: imports from "${importItem[0]}" are ${importItem[1]}`);
             }
         }
         else if (symIndex == SystemVerilogParser.ContainerInfoIndex.Containers) {
-            for (let childContainerInfo of <SystemVerilogParser.SystemVerilogContainersInfo>(containerInfo[SystemVerilogParser.ContainerInfoIndex.Containers])) {
+            if (containerInfo.containersInfo == undefined) {
+                return;
+            }
+            for (let childContainerInfo of containerInfo.containersInfo) {
                 let symbol: SystemVerilogSymbol = childContainerInfo[0][0];
                 ConnectionLogger.log(`DEBUG: container symbol "${symbol.name}" of type ${symbol.type}`);
-                let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[] = childContainerInfo[1];
-                for (let si: number = 0; si < containerSymbolsInfo.length; si++) {
+                let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = childContainerInfo[1];
+                for (let si: number = 0; si < Object.entries(SystemVerilogParser.ContainerInfoIndex).length; si++) {
                     this._debugContainerInfo(containerSymbolsInfo, si);
                 }
             }
         }
         else if (symIndex == SystemVerilogParser.ContainerInfoIndex.Exports) {
-            for (let exportItem of <SystemVerilogParser.SystemVerilogExportsInfo>(containerInfo[SystemVerilogParser.ContainerInfoIndex.Exports])) {
+            if (containerInfo.exportsInfo == undefined) {
+                return;
+            }
+            for (let exportItem of containerInfo.exportsInfo) {
                 ConnectionLogger.log(`DEBUG: exports from "${exportItem[0]}" are ${exportItem[1]}`);
             }
         }
@@ -344,8 +326,8 @@ export class SystemVerilogParser {
             for (let containerInfo of this._fileSymbolsInfo.containersInfo) {
                 let symbol: SystemVerilogSymbol = containerInfo[0][0];
                 ConnectionLogger.log(`DEBUG: container symbol "${symbol.name}" of type ${symbol.type}`);
-                let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[] = containerInfo[1];
-                for (let si: number = 0; si < containerSymbolsInfo.length; si++) {
+                let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = containerInfo[1];
+                for (let si: number = 0; si < Object.entries(SystemVerilogParser.ContainerInfoIndex).length; si++) {
                     this._debugContainerInfo(containerSymbolsInfo, si);
                 }
             }
@@ -2899,8 +2881,13 @@ export namespace SystemVerilogParser {
     export type SystemVerilogSymbolsInfo = SystemVerilogSymbolInfo[];
     export type SystemVerilogImportsInfo = SystemVerilogImportInfo[];
     export type SystemVerilogExportsInfo = SystemVerilogExportInfo[];
-    export type SystemVerilogContainerSymbolsInfo = SystemVerilogSymbolsInfo|SystemVerilogImportsInfo|SystemVerilogContainersInfo|SystemVerilogExportsInfo;
-    export type SystemVerilogContainerInfo = [[SystemVerilogSymbol, SystemVerilogPosition], SystemVerilogContainerSymbolsInfo[]];
+    export type SystemVerilogContainerSymbolsInfo = {
+        symbolsInfo?: SystemVerilogSymbolsInfo,
+        importsInfo?: SystemVerilogImportsInfo,
+        containersInfo?: SystemVerilogContainersInfo,
+        exportsInfo?: SystemVerilogExportsInfo
+    };
+    export type SystemVerilogContainerInfo = [[SystemVerilogSymbol, SystemVerilogPosition], SystemVerilogContainerSymbolsInfo];
     export type SystemVerilogContainersInfo = SystemVerilogContainerInfo[];
     export type SystemVerilogIncludesInfo = SystemVerilogIncludeInfo[];
     export type SystemVerilogFileSymbolsInfo = {
@@ -2978,13 +2965,12 @@ export namespace SystemVerilogParser {
         }
     }
 
-    export function containerAllContainers(containerSymbolsInfo: SystemVerilogContainerSymbolsInfo[]): SystemVerilogSymbol[] {
+    export function containerAllContainers(containerSymbolsInfo: SystemVerilogContainerSymbolsInfo): SystemVerilogSymbol[] {
         try {
             let symbols: SystemVerilogSymbol[] = [];
 
-            if ((containerSymbolsInfo.length > ContainerInfoIndex.Containers) &&
-                (containerSymbolsInfo[ContainerInfoIndex.Containers] != undefined)) {
-                for (let container of <SystemVerilogContainersInfo>(containerSymbolsInfo[ContainerInfoIndex.Containers])) {
+            if (containerSymbolsInfo.containersInfo != undefined) {
+                for (let container of containerSymbolsInfo.containersInfo) {
                     if (!container[0][0].name.startsWith('#')) {
                         symbols.push(container[0][0]);
                     }
@@ -3001,10 +2987,9 @@ export namespace SystemVerilogParser {
 
     export function containerContainers(containerInfo: SystemVerilogContainerInfo): SystemVerilogContainersInfo {
         try {
-            if ((containerInfo[1].length > ContainerInfoIndex.Containers) &&
-                (containerInfo[1][ContainerInfoIndex.Containers] != undefined) &&
-                (containerInfo[1][ContainerInfoIndex.Containers].length > 0)) {
-                return <SystemVerilogContainersInfo>(containerInfo[1][ContainerInfoIndex.Containers]);
+            if ((containerInfo[1].containersInfo != undefined) &&
+                (containerInfo[1].containersInfo.length > 0)) {
+                return containerInfo[1].containersInfo;
             }
             return [];
         } catch(error) {
@@ -3016,10 +3001,9 @@ export namespace SystemVerilogParser {
     export function containerTopSymbols(containerInfo: SystemVerilogContainerInfo): SystemVerilogSymbol[] {
         try {
             let symbols: SystemVerilogSymbol[] = [containerInfo[0][0]];
-            if ((containerInfo[1].length > ContainerInfoIndex.Symbols) &&
-                (containerInfo[1][ContainerInfoIndex.Symbols] != undefined) &&
-                (containerInfo[1][ContainerInfoIndex.Symbols].length > 0)) {
-                symbols = symbols.concat(<SystemVerilogSymbolsInfo>(containerInfo[1][ContainerInfoIndex.Symbols]));
+            if ((containerInfo[1].symbolsInfo != undefined) &&
+                (containerInfo[1].symbolsInfo.length > 0)) {
+                symbols = symbols.concat(containerInfo[1].symbolsInfo);
             }
             return symbols;
         } catch(error) {
@@ -3036,17 +3020,15 @@ export namespace SystemVerilogParser {
                 symbols.push(containerInfo[0][0]);
             }
 
-            if ((containerInfo[1].length > ContainerInfoIndex.Symbols) &&
-                (containerInfo[1][ContainerInfoIndex.Symbols] != undefined) &&
-                (containerInfo[1][ContainerInfoIndex.Symbols].length > 0)) {
-                let cntnrSymbols: SystemVerilogSymbol[] = <SystemVerilogSymbolsInfo>(containerInfo[1][ContainerInfoIndex.Symbols]);
+            if ((containerInfo[1].symbolsInfo != undefined) &&
+                (containerInfo[1].symbolsInfo.length > 0)) {
+                let cntnrSymbols: SystemVerilogSymbol[] = containerInfo[1].symbolsInfo;
                 symbols = symbols.concat(cntnrSymbols.filter(sym => { return !sym.name.startsWith('#'); }));
             }
 
-            if ((containerInfo[1].length > ContainerInfoIndex.Containers) &&
-                (containerInfo[1][ContainerInfoIndex.Containers] != undefined) &&
-                (containerInfo[1][ContainerInfoIndex.Containers].length > 0)) {
-                for (let childContainerInfo of <SystemVerilogContainersInfo>(containerInfo[1][ContainerInfoIndex.Containers])) {
+            if ((containerInfo[1].containersInfo != undefined) &&
+                (containerInfo[1].containersInfo.length > 0)) {
+                for (let childContainerInfo of containerInfo[1].containersInfo) {
                     if (topOnly) {
                         symbols.push(childContainerInfo[0][0]);
                     }
@@ -3095,20 +3077,18 @@ export namespace SystemVerilogParser {
         }
     }
 
-    export function findContainerSymbol(containerSymbolsInfo: SystemVerilogContainerSymbolsInfo[], symbolName: string, findContainer: Boolean): SystemVerilogSymbol | SystemVerilogContainerInfo {
+    export function findContainerSymbol(containerSymbolsInfo: SystemVerilogContainerSymbolsInfo, symbolName: string, findContainer: Boolean): SystemVerilogSymbol | SystemVerilogContainerInfo {
         try {
             if (!findContainer &&
-                (containerSymbolsInfo.length > ContainerInfoIndex.Symbols) &&
-                (containerSymbolsInfo[ContainerInfoIndex.Symbols] != undefined)) {
-                let symbol: SystemVerilogSymbol = (<SystemVerilogSymbol[]>(containerSymbolsInfo[ContainerInfoIndex.Symbols])).find(sym => { return sym.name == symbolName; });
+                (containerSymbolsInfo.symbolsInfo != undefined)) {
+                let symbol: SystemVerilogSymbol = containerSymbolsInfo.symbolsInfo.find(sym => { return sym.name == symbolName; });
                 if (symbol != undefined) {
                     return symbol;
                 }
             }
 
-            if ((containerSymbolsInfo.length > ContainerInfoIndex.Containers) &&
-                (containerSymbolsInfo[ContainerInfoIndex.Containers] != undefined)) {
-                for (let container of <SystemVerilogContainersInfo>(containerSymbolsInfo[ContainerInfoIndex.Containers])) {
+            if (containerSymbolsInfo.containersInfo != undefined) {
+                for (let container of containerSymbolsInfo.containersInfo) {
                     if (container[0][0].name == symbolName) {
                         if (findContainer) {
                             return container;
@@ -3134,7 +3114,7 @@ export namespace SystemVerilogParser {
             }
 
             if (findContainer) {
-                return [[undefined, undefined], []];
+                return [[undefined, undefined], {}];
             }
             else {
                 return undefined;
@@ -3145,12 +3125,11 @@ export namespace SystemVerilogParser {
         }
     }
 
-    export function getInstSymbolsInContainer(containerSymbolsInfo: SystemVerilogContainerSymbolsInfo[]): SystemVerilogSymbol[] {
+    export function getInstSymbolsInContainer(containerSymbolsInfo: SystemVerilogContainerSymbolsInfo): SystemVerilogSymbol[] {
         try {
             let instSymbols: SystemVerilogSymbol[] = [];
-            if ((containerSymbolsInfo.length > ContainerInfoIndex.Symbols) &&
-                (containerSymbolsInfo[ContainerInfoIndex.Symbols] != undefined)) {
-                instSymbols = (<SystemVerilogSymbol[]>(containerSymbolsInfo[ContainerInfoIndex.Symbols])).filter(sym => sym.type[0] == "instance");
+            if (containerSymbolsInfo.symbolsInfo != undefined) {
+                instSymbols = containerSymbolsInfo.symbolsInfo.filter(sym => sym.type[0] == "instance");
             }
             return instSymbols;
         } catch(error) {
@@ -3196,7 +3175,7 @@ export namespace SystemVerilogParser {
             }
 
             if (findContainer) {
-                return [undefined, []];
+                return [undefined, {}];
             }
             else {
                 return undefined;
@@ -3252,45 +3231,41 @@ export namespace SystemVerilogParser {
         }
     }
 
-    function _containerSymbolsInfoToJson(containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[]): SystemVerilogContainerSymbolsInfoJSON[] {
-        //Containers,
-        //Exports
+    function _containerSymbolsInfoToJson(containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo): SystemVerilogContainerSymbolsInfoJSON[] {
         let result: SystemVerilogContainerSymbolsInfoJSON[] = [];
 
-        if (containerSymbolsInfo.length > ContainerInfoIndex.Symbols) {
-            if (containerSymbolsInfo[ContainerInfoIndex.Symbols] == undefined) {
-                result.push(undefined);
-            }
-            else {
-                result.push((<SystemVerilogSymbolsInfo>(containerSymbolsInfo[ContainerInfoIndex.Symbols])).map(ci => ci.toJSON()));
-            }
-        }
-
-        if (containerSymbolsInfo.length > ContainerInfoIndex.Imports) {
-            if (containerSymbolsInfo[ContainerInfoIndex.Imports] == undefined) {
-                result.push(undefined);
-            }
-            else {
-                result.push(<SystemVerilogImportsInfo>(containerSymbolsInfo[ContainerInfoIndex.Imports]));
+        if (containerSymbolsInfo.symbolsInfo == undefined) {
+            if ((containerSymbolsInfo.importsInfo != undefined) ||
+                (containerSymbolsInfo.containersInfo != undefined) ||
+                (containerSymbolsInfo.exportsInfo != undefined)) {
+                result.push([]);
             }
         }
-
-        if (containerSymbolsInfo.length > ContainerInfoIndex.Containers) {
-            if (containerSymbolsInfo[ContainerInfoIndex.Containers] == undefined) {
-                result.push(undefined);
-            }
-            else {
-                result.push((<SystemVerilogContainersInfo>(containerSymbolsInfo[ContainerInfoIndex.Containers])).map(ci => _containerInfoToJson(ci)));
-            }
+        else {
+            result.push(containerSymbolsInfo.symbolsInfo.map(ci => ci.toJSON()));
         }
 
-        if (containerSymbolsInfo.length > ContainerInfoIndex.Exports) {
-            if (containerSymbolsInfo[ContainerInfoIndex.Exports] == undefined) {
-                result.push(undefined);
+        if (containerSymbolsInfo.importsInfo == undefined) {
+            if ((containerSymbolsInfo.containersInfo != undefined) ||
+                (containerSymbolsInfo.exportsInfo != undefined)) {
+                result.push([]);
             }
-            else {
-                result.push(<SystemVerilogExportsInfo>(containerSymbolsInfo[ContainerInfoIndex.Exports]));
+        }
+        else {
+            result.push(containerSymbolsInfo.importsInfo);
+        }
+
+        if (containerSymbolsInfo.containersInfo == undefined) {
+            if (containerSymbolsInfo.exportsInfo != undefined) {
+                result.push([]);
             }
+        }
+        else {
+            result.push(containerSymbolsInfo.containersInfo.map(ci => _containerInfoToJson(ci)));
+        }
+
+        if (containerSymbolsInfo.exportsInfo != undefined) {
+            result.push(containerSymbolsInfo.exportsInfo);
         }
 
         return result;
@@ -3378,18 +3353,16 @@ export namespace SystemVerilogParser {
         }
     }
 
-    export function containerImports(containerSymbolsInfo: SystemVerilogContainerSymbolsInfo[], topOnly: boolean = false): SystemVerilogImportsInfo {
+    export function containerImports(containerSymbolsInfo: SystemVerilogContainerSymbolsInfo, topOnly: boolean = false): SystemVerilogImportsInfo {
         try {
             let containerImportsInfo: SystemVerilogImportsInfo = [];
 
-            if ((containerSymbolsInfo.length > ContainerInfoIndex.Imports) &&
-                (containerSymbolsInfo[ContainerInfoIndex.Imports] != undefined)) {
-                containerImportsInfo = <SystemVerilogImportsInfo>(containerSymbolsInfo[ContainerInfoIndex.Imports]);
+            if (containerSymbolsInfo.importsInfo != undefined) {
+                containerImportsInfo = containerSymbolsInfo.importsInfo;
             }
 
-            if (!topOnly && (containerSymbolsInfo.length > ContainerInfoIndex.Containers) &&
-                (containerSymbolsInfo[ContainerInfoIndex.Containers] != undefined)) {
-                for (let cntnrInfo of <SystemVerilogContainersInfo>(containerSymbolsInfo[ContainerInfoIndex.Containers])) {
+            if (!topOnly && (containerSymbolsInfo.containersInfo != undefined)) {
+                for (let cntnrInfo of containerSymbolsInfo.containersInfo) {
                     containerImportsInfo = containerImportsInfo.concat(containerImports(cntnrInfo[1]));
                 }
             }
@@ -3422,18 +3395,16 @@ export namespace SystemVerilogParser {
         }
     }
 
-    export function containerExports(containerSymbolsInfo: SystemVerilogContainerSymbolsInfo[]): SystemVerilogExportsInfo {
+    export function containerExports(containerSymbolsInfo: SystemVerilogContainerSymbolsInfo): SystemVerilogExportsInfo {
         try {
             let containerExportsInfo: SystemVerilogExportsInfo = [];
 
-            if ((containerSymbolsInfo.length > ContainerInfoIndex.Exports) &&
-                (containerSymbolsInfo[ContainerInfoIndex.Exports] != undefined)) {
-                containerExportsInfo = <SystemVerilogExportsInfo>(containerSymbolsInfo[ContainerInfoIndex.Exports]);
+            if (containerSymbolsInfo.exportsInfo != undefined) {
+                containerExportsInfo = containerSymbolsInfo.exportsInfo;
             }
 
-            if ((containerSymbolsInfo.length > ContainerInfoIndex.Containers) &&
-                (containerSymbolsInfo[ContainerInfoIndex.Containers] != undefined)) {
-                for (let cntnrInfo of <SystemVerilogContainersInfo>(containerSymbolsInfo[ContainerInfoIndex.Containers])) {
+            if (containerSymbolsInfo.containersInfo != undefined) {
+                for (let cntnrInfo of containerSymbolsInfo.containersInfo) {
                     containerExportsInfo = containerExportsInfo.concat(containerExports(cntnrInfo[1]));
                 }
             }

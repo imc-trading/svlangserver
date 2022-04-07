@@ -326,15 +326,14 @@ export class SystemVerilogSignatureHelpProvider {
 
                 let routineFile: string;
                 let routineSymbol: SystemVerilogSymbol;
-                let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[];
+                let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo;
                 [routineFile, routineSymbol, containerSymbolsInfo] = this._indexer.getContainerInfo(document.uri, svtokens[routineToken].text);
                 if ((routineFile == undefined) || (routineSymbol == undefined) || (containerSymbolsInfo == undefined) ||
-                    (containerSymbolsInfo.length <= SystemVerilogParser.ContainerInfoIndex.Symbols) ||
-                    (containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols] == undefined)) {
+                    (containerSymbolsInfo.symbolsInfo == undefined)) {
                     return nullSignatureHelp;
                 }
 
-                let routineArgSymbols: SystemVerilogSymbol[] = <SystemVerilogSymbol[]>(containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols]);
+                let routineArgSymbols: SystemVerilogSymbol[] = containerSymbolsInfo.symbolsInfo;
                 let symbols: SystemVerilogSymbol[] = routineArgSymbols.filter(sym => { return sym.name == svtokens[startTokenNum].text; })
                 if (symbols.length <= 0) {
                     return nullSignatureHelp;
@@ -357,15 +356,14 @@ export class SystemVerilogSignatureHelpProvider {
             else if (scopeType == ScopeType.RoutineOrdered) {
                 let routineFile: string;
                 let routineSymbol: SystemVerilogSymbol;
-                let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo[];
+                let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo;
                 [routineFile, routineSymbol, containerSymbolsInfo] = this._indexer.getContainerInfo(document.uri, svtokens[startTokenNum].text);
                 //DBG ConnectionLogger.log(`DEBUG: HERE with ${svtoken.text} and ${scopeType} and ${svtokens[startTokenNum].text} and ${routineFile} and ${routineSymbol.name} and ${containerSymbolsInfo == undefined}`);
                 if ((routineFile == undefined) || (routineSymbol == undefined) || (containerSymbolsInfo == undefined)) {
                     return nullSignatureHelp;
                 }
 
-                if ((containerSymbolsInfo.length <= SystemVerilogParser.ContainerInfoIndex.Symbols) ||
-                    (containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols] == undefined)) {
+                if (containerSymbolsInfo.symbolsInfo == undefined) {
                     return {
                         signatures: [
                             {
@@ -379,7 +377,7 @@ export class SystemVerilogSignatureHelpProvider {
                     };
                 }
 
-                let routineArgSymbols: SystemVerilogSymbol[] = <SystemVerilogSymbol[]>(containerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Symbols]);
+                let routineArgSymbols: SystemVerilogSymbol[] = containerSymbolsInfo.symbolsInfo;
                 let label: string = `${svtokens[startTokenNum].text}(${routineArgSymbols.map(sym => sym.name).join(', ')})`;
                 let definitions: string[] = SystemVerilogSymbol.getDefinitions(routineFile, routineArgSymbols);
                 let params = [];
