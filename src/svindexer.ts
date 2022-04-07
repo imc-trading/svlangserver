@@ -1004,22 +1004,22 @@ export class SystemVerilogIndexer {
 
                             let containerExportsInfo: SystemVerilogParser.SystemVerilogExportsInfo = SystemVerilogParser.containerExports(pkgContainer.info);
                             for (let exportItem of containerExportsInfo) {
-                                if (exportItem[0] == "*") {
+                                if (exportItem.pkg == "*") {
                                     for (let pkgImport of SystemVerilogParser.containerImports(pkgContainer.info)) {
-                                        if ((pkgImport[1].length == 1) && (pkgImport[1][0] == "*")) {
-                                            pkgQ.unshift(pkgImport[0]);
+                                        if ((pkgImport.symbolsText.length == 1) && (pkgImport.symbolsText[0] == "*")) {
+                                            pkgQ.unshift(pkgImport.pkg);
                                         }
-                                        else if (pkgImport[1].includes(unscopedSymbolName)) {
-                                            pkgQ.unshift(pkgImport[0]);
+                                        else if (pkgImport.symbolsText.includes(unscopedSymbolName)) {
+                                            pkgQ.unshift(pkgImport.pkg);
                                         }
                                     }
                                 }
-                                else if ((exportItem[1].length == 1) &&
-                                         (exportItem[1][0] == "*")) {
-                                    pkgQ.unshift(exportItem[0]);
+                                else if ((exportItem.symbolsText.length == 1) &&
+                                         (exportItem.symbolsText[0] == "*")) {
+                                    pkgQ.unshift(exportItem.pkg);
                                 }
-                                else if (exportItem[1].includes(unscopedSymbolName)) {
-                                    pkgQ.unshift(exportItem[0]);
+                                else if (exportItem.symbolsText.includes(unscopedSymbolName)) {
+                                    pkgQ.unshift(exportItem.pkg);
                                 }
                             }
                         }
@@ -1436,16 +1436,16 @@ export class SystemVerilogIndexer {
         let _importsInfo: SystemVerilogParser.SystemVerilogImportsInfo = [...importsInfo];
         while (_importsInfo.length > 0) {
             let importItem: SystemVerilogParser.SystemVerilogImportInfo = _importsInfo.shift();
-            if ((importItem[1].length == 1) &&
-                (importItem[1][0] == "*")) {
-                if (this._pkgToFiles.has(importItem[0])) {
-                    for (let pkgFilePath of this._pkgToFiles.get(importItem[0])) {
+            if ((importItem.symbolsText.length == 1) &&
+                (importItem.symbolsText[0] == "*")) {
+                if (this._pkgToFiles.has(importItem.pkg)) {
+                    for (let pkgFilePath of this._pkgToFiles.get(importItem.pkg)) {
                         if (this._indexedFilesInfo.has(pkgFilePath)) {
                             let pkgFileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo = this._indexedFilesInfo.get(pkgFilePath).symbolsInfo;
                             let pkgContainer: SystemVerilogParser.SystemVerilogContainerInfo;
                             if (pkgFileSymbolsInfo.containersInfo != undefined) {
                                 for (let cntnr of pkgFileSymbolsInfo.containersInfo) {
-                                    if ((cntnr.symbol.name == importItem[0]) && (cntnr.symbol.type[0] == "package")) {
+                                    if ((cntnr.symbol.name == importItem.pkg) && (cntnr.symbol.type[0] == "package")) {
                                         pkgContainer = cntnr;
                                         break;
                                     }
@@ -1453,28 +1453,28 @@ export class SystemVerilogIndexer {
                             }
                             if (pkgContainer != undefined) {
                                 if (pkgContainer.info.symbolsInfo != undefined) {
-                                    symbolNames.push([importItem[0], pkgContainer.info.symbolsInfo.map(sym => {
+                                    symbolNames.push([importItem.pkg, pkgContainer.info.symbolsInfo.map(sym => {
                                         return sym.name;
                                     })]);
                                 }
 
                                 if (pkgContainer.info.containersInfo != undefined) {
-                                    symbolNames.push([importItem[0], pkgContainer.info.containersInfo.map(cntnrInfo => {
+                                    symbolNames.push([importItem.pkg, pkgContainer.info.containersInfo.map(cntnrInfo => {
                                         return cntnrInfo.symbol.name;
                                     })]);
                                 }
 
                                 let containerExportsInfo: SystemVerilogParser.SystemVerilogExportsInfo = SystemVerilogParser.containerExports(pkgContainer.info);
                                 for (let exportItem of containerExportsInfo) {
-                                    if (exportItem[0] == "*") {
+                                    if (exportItem.pkg == "*") {
                                         _importsInfo.unshift(...SystemVerilogParser.containerImports(pkgContainer.info));
                                     }
-                                    else if ((exportItem[1].length == 1) &&
-                                             (exportItem[1][0] == "*")) {
+                                    else if ((exportItem.symbolsText.length == 1) &&
+                                             (exportItem.symbolsText[0] == "*")) {
                                         _importsInfo.unshift(exportItem);
                                     }
                                     else {
-                                        symbolNames.push(exportItem);
+                                        symbolNames.push([exportItem.pkg, exportItem.symbolsText]);
                                     }
                                 }
                             }
@@ -1483,7 +1483,7 @@ export class SystemVerilogIndexer {
                 }
             }
             else {
-                symbolNames.push(importItem);
+                symbolNames.push([importItem.pkg, importItem.symbolsText]);
             }
         }
         return symbolNames;

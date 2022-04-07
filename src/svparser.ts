@@ -49,7 +49,12 @@ function _jsonToContainerSymbolsInfo(file: string, jsonContainerSymbolsInfo: Sys
     }
 
     if (jsonContainerSymbolsInfo.length > SystemVerilogParser.ContainerInfoIndex.Imports) {
-        containerSymbolsInfo.importsInfo = <SystemVerilogParser.SystemVerilogImportsInfo>(jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Imports]);
+        if (jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Imports] != undefined) {
+            containerSymbolsInfo.importsInfo = [];
+            for (let importInfo of <SystemVerilogParser.SystemVerilogImportsInfoJSON>(jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Imports])) {
+                containerSymbolsInfo.importsInfo.push({pkg: importInfo[0], symbolsText: importInfo[1]});
+            }
+        }
     }
 
     if (jsonContainerSymbolsInfo.length > SystemVerilogParser.ContainerInfoIndex.Containers) {
@@ -66,7 +71,12 @@ function _jsonToContainerSymbolsInfo(file: string, jsonContainerSymbolsInfo: Sys
     }
 
     if (jsonContainerSymbolsInfo.length > SystemVerilogParser.ContainerInfoIndex.Exports) {
-        containerSymbolsInfo.exportsInfo = <SystemVerilogParser.SystemVerilogExportsInfo>(jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Exports]);
+        if (jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Exports] != undefined) {
+            containerSymbolsInfo.exportsInfo = [];
+            for (let exportInfo of <SystemVerilogParser.SystemVerilogExportsInfoJSON>(jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Exports])) {
+                containerSymbolsInfo.exportsInfo.push({pkg: exportInfo[0], symbolsText: exportInfo[1]});
+            }
+        }
     }
 
     return containerSymbolsInfo;
@@ -202,16 +212,16 @@ class ContainerStack {
 
         if (importInfo[2] == undefined) {
             importInfo[2] = importsInfo.length;
-            importsInfo.push([importParts[0], []]);
+            importsInfo.push({ pkg: importParts[0], symbolsText: [] });
         }
 
         if (importParts[1] == "*") {
             importInfo[0] = true;
             importInfo[1] = new Set(["*"]);
-            importsInfo[importInfo[2]][1] = ["*"];
+            importsInfo[importInfo[2]].symbolsText = ["*"];
         }
         else {
-            importsInfo[importInfo[2]][1].push(importParts[1]);
+            importsInfo[importInfo[2]].symbolsText.push(importParts[1]);
         }
     }
 
@@ -248,16 +258,16 @@ class ContainerStack {
 
         if (exportInfo[2] == undefined) {
             exportInfo[2] = exportsInfo.length;
-            exportsInfo.push([exportParts[0], []]);
+            exportsInfo.push({ pkg: exportParts[0], symbolsText: [] });
         }
 
         if (exportParts[1] == "*") {
             exportInfo[0] = true;
             exportInfo[1] = new Set(["*"]);
-            exportsInfo[exportInfo[2]][1] = ["*"];
+            exportsInfo[exportInfo[2]].symbolsText = ["*"];
         }
         else {
-            exportsInfo[exportInfo[2]][1].push(exportParts[1]);
+            exportsInfo[exportInfo[2]].symbolsText.push(exportParts[1]);
         }
     }
 }
@@ -2876,8 +2886,8 @@ export namespace SystemVerilogParser {
 
     export type SystemVerilogPosition = { file?: string, line: number, character: number };
     export type SystemVerilogSymbolInfo = SystemVerilogSymbol;
-    export type SystemVerilogImportInfo = [string, string[]];
-    export type SystemVerilogExportInfo = [string, string[]];
+    export type SystemVerilogImportInfo = { pkg: string, symbolsText: string[] };
+    export type SystemVerilogExportInfo = { pkg: string, symbolsText: string[] };
     export type SystemVerilogIncludeInfo = string;
     export type SystemVerilogSymbolsInfo = SystemVerilogSymbolInfo[];
     export type SystemVerilogImportsInfo = SystemVerilogImportInfo[];
@@ -2901,11 +2911,15 @@ export namespace SystemVerilogParser {
 
     export type SystemVerilogPositionJSON = [number, number]|[string, [number, number]];
     export type SystemVerilogSymbolInfoJSON = SystemVerilogSymbolJSON;
+    export type SystemVerilogImportInfoJSON = [string, string[]];
+    export type SystemVerilogExportInfoJSON = [string, string[]];
+    export type SystemVerilogImportsInfoJSON = SystemVerilogImportInfoJSON[];
+    export type SystemVerilogExportsInfoJSON = SystemVerilogExportInfoJSON[];
     export type SystemVerilogSymbolsInfoJSON = SystemVerilogSymbolInfoJSON[];
-    export type SystemVerilogContainerSymbolsInfoJSON = (SystemVerilogSymbolsInfoJSON|SystemVerilogImportsInfo|SystemVerilogContainersInfoJSON|SystemVerilogExportsInfo)[];
+    export type SystemVerilogContainerSymbolsInfoJSON = (SystemVerilogSymbolsInfoJSON|SystemVerilogImportsInfoJSON|SystemVerilogContainersInfoJSON|SystemVerilogExportsInfoJSON)[];
     export type SystemVerilogContainerInfoJSON = [[SystemVerilogSymbolJSON, SystemVerilogPositionJSON], SystemVerilogContainerSymbolsInfoJSON];
     export type SystemVerilogContainersInfoJSON = SystemVerilogContainerInfoJSON[];
-    export type SystemVerilogFileSymbolsInfoJSON = (SystemVerilogContainersInfoJSON|SystemVerilogIncludesInfo|SystemVerilogSymbolsInfoJSON|SystemVerilogImportsInfo|SystemVerilogExportsInfo)[];
+    export type SystemVerilogFileSymbolsInfoJSON = (SystemVerilogContainersInfoJSON|SystemVerilogIncludesInfo|SystemVerilogSymbolsInfoJSON|SystemVerilogImportsInfoJSON|SystemVerilogExportsInfoJSON)[];
 
     export function fileTopSymbols(fileSymbolsInfo: SystemVerilogFileSymbolsInfo, strict: Boolean = false): SystemVerilogSymbol[] {
         try {
@@ -3220,11 +3234,21 @@ export namespace SystemVerilogParser {
             }
 
             if (jsonFileSymbolsInfo.length > FileInfoIndex.Imports) {
-                fileSymbolsInfo.importsInfo = <SystemVerilogImportsInfo>(jsonFileSymbolsInfo[FileInfoIndex.Imports]);
+                if (jsonFileSymbolsInfo[FileInfoIndex.Imports] != undefined) {
+                    fileSymbolsInfo.importsInfo = [];
+                    for (let importInfo of <SystemVerilogImportsInfoJSON>(jsonFileSymbolsInfo[FileInfoIndex.Imports])) {
+                        fileSymbolsInfo.importsInfo.push({ pkg: importInfo[0], symbolsText: importInfo[1] });
+                    }
+                }
             }
 
             if (jsonFileSymbolsInfo.length > FileInfoIndex.Exports) {
-                fileSymbolsInfo.exportsInfo = <SystemVerilogExportsInfo>(jsonFileSymbolsInfo[FileInfoIndex.Exports]);
+                if (jsonFileSymbolsInfo[FileInfoIndex.Exports] != undefined) {
+                    fileSymbolsInfo.exportsInfo = [];
+                    for (let exportInfo of <SystemVerilogExportsInfoJSON>(jsonFileSymbolsInfo[FileInfoIndex.Exports])) {
+                        fileSymbolsInfo.exportsInfo.push({ pkg: exportInfo[0], symbolsText: exportInfo[1] });
+                    }
+                }
             }
 
             if (jsonFileSymbolsInfo.length > FileInfoIndex.Symbols) {
@@ -3264,7 +3288,7 @@ export namespace SystemVerilogParser {
             }
         }
         else {
-            result.push(containerSymbolsInfo.importsInfo);
+            result.push(containerSymbolsInfo.importsInfo.map(im => [im.pkg, im.symbolsText]));
         }
 
         if (containerSymbolsInfo.containersInfo == undefined) {
@@ -3277,7 +3301,7 @@ export namespace SystemVerilogParser {
         }
 
         if (containerSymbolsInfo.exportsInfo != undefined) {
-            result.push(containerSymbolsInfo.exportsInfo);
+            result.push(containerSymbolsInfo.exportsInfo.map(ex => [ex.pkg, ex.symbolsText]));
         }
 
         return result;
@@ -3331,7 +3355,8 @@ export namespace SystemVerilogParser {
                 (fileSymbolsInfo.exportsInfo != undefined) ||
                 (fileSymbolsInfo.symbolsInfo != undefined)) {
                 if (fileSymbolsInfo.importsInfo != undefined) {
-                    fileSymbolsInfoJson.push(fileSymbolsInfo.importsInfo);
+                    const importsInfoJSON: SystemVerilogImportsInfoJSON = fileSymbolsInfo.importsInfo.map(im => [im.pkg, im.symbolsText]);
+                    fileSymbolsInfoJson.push(importsInfoJSON);
                 }
                 else {
                     fileSymbolsInfoJson.push(undefined);
@@ -3341,7 +3366,8 @@ export namespace SystemVerilogParser {
             if ((fileSymbolsInfo.exportsInfo != undefined) ||
                 (fileSymbolsInfo.symbolsInfo != undefined)) {
                 if (fileSymbolsInfo.exportsInfo != undefined) {
-                    fileSymbolsInfoJson.push(fileSymbolsInfo.exportsInfo);
+                    const exportsInfoJSON: SystemVerilogExportsInfoJSON = fileSymbolsInfo.exportsInfo.map(ex => [ex.pkg, ex.symbolsText]);
+                    fileSymbolsInfoJson.push(exportsInfoJSON);
                 }
                 else {
                     fileSymbolsInfoJson.push(undefined);
