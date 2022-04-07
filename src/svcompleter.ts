@@ -639,12 +639,12 @@ export class SystemVerilogCompleter {
                         const symTokens: GrammarToken[] = svtokens.slice(svtokennums[0], svtokennums[1] + 1) || [];
                         let symParts: string[] = this._indexer.getHierParts(symTokens.map(t => t.text).join(''), symTokens, document.offsetAt(position) - svtokens[svtokennums[0]].index);
                         let fileUri: string;
-                        let containerInfo: SystemVerilogParser.SystemVerilogContainerInfo = [[undefined, undefined], undefined];
-                        [fileUri, containerInfo[0][0]] = this._indexer.getHierarchicalSymbol(document.uri, symParts.slice(0, -1));
-                        if ((fileUri == undefined) || (containerInfo[0][0] == undefined)) {
+                        let containerInfo: SystemVerilogParser.SystemVerilogContainerInfo = { symbol: undefined, position: undefined, info: {}  };
+                        [fileUri, containerInfo.symbol] = this._indexer.getHierarchicalSymbol(document.uri, symParts.slice(0, -1));
+                        if ((fileUri == undefined) || (containerInfo.symbol == undefined)) {
                             return [];
                         }
-                        [fileUri, containerInfo[0][0], containerInfo[1]] = this._indexer.getSymbolTypeContainerInfo(fileUri, containerInfo[0][0]);
+                        [fileUri, containerInfo.symbol, containerInfo.info] = this._indexer.getSymbolTypeContainerInfo(fileUri, containerInfo.symbol);
                         return this._stringlistToCompletionItems(SystemVerilogParser.containerAllSymbols(containerInfo, true).map(s => s.name), CompletionItemKind.Text, "identifier.hieararchical.systemverilog");
                     }
                     else if (scopes[scopes.length - 1] == "identifier.scoped.systemverilog") {
