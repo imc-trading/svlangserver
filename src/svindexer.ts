@@ -1120,7 +1120,7 @@ export class SystemVerilogIndexer {
             let scopedSymbol: SystemVerilogSymbol;
             for (let cntnrInfo of containersInfo) {
                 let cntnrStart: Location = cntnrInfo.symbol.getSymbolLocation(uri);
-                let cntnrEnd: Position = typeof cntnrInfo.position[0] === "number" ? Position.create(cntnrInfo.position[0], <number>(cntnrInfo.position[1])) : undefined;
+                let cntnrEnd: Position = cntnrInfo.position.file == undefined ? Position.create(cntnrInfo.position.line, cntnrInfo.position.character) : undefined;
                 if ((cntnrStart.uri == uri) && _isBefore(cntnrStart.range.start, position) &&
                     (cntnrEnd !== undefined) && _isBefore(position, cntnrEnd)) {
                     let cntnrs: SystemVerilogParser.SystemVerilogContainersInfo = SystemVerilogParser.containerContainers(cntnrInfo);

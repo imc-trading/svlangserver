@@ -58,7 +58,7 @@ function _jsonToContainerSymbolsInfo(file: string, jsonContainerSymbolsInfo: Sys
             for (let jsonContainerInfo of (<SystemVerilogParser.SystemVerilogContainersInfoJSON>(jsonContainerSymbolsInfo[SystemVerilogParser.ContainerInfoIndex.Containers]))) {
                 containerSymbolsInfo.containersInfo.push({
                     symbol: SystemVerilogSymbol.fromJSON(file, jsonContainerInfo[0][0]),
-                    position: jsonContainerInfo[0][1],
+                    position: SystemVerilogParser.jsonToPosition(jsonContainerInfo[0][1]),
                     info: _jsonToContainerSymbolsInfo(file, jsonContainerInfo[1])
                 });
             }
@@ -452,21 +452,21 @@ export class SystemVerilogParser {
         if (tokenOrderIndex == undefined) {
             ConnectionLogger.error(`Could not figure out the source file for the given token. Falling back to default`);
             let endPos: Position = this._document.positionAt(this._svtokens[_token].endTokenIndex);
-            return [endPos.line, endPos.character];
+            return { line: endPos.line, character: endPos.character };
         }
 
         let document: TextDocument = this._getDocumentFromTokenOrderIndex(tokenOrderIndex);
         if (document == undefined) {
             ConnectionLogger.error(`Could not figure out the source file for the given token. Falling back to default`);
             let endPos: Position = this._document.positionAt(this._svtokens[_token].endTokenIndex);
-            return [endPos.line, endPos.character];
+            return { line: endPos.line, character: endPos.character };
         }
 
         let refDocumentPath: string = this._containerStack.getContainerDocumentPath(document.uri);
         let endPos: Position = (this._document.uri == refDocumentPath)
                              ? this._document.positionAt(this._svtokens[_token].endTokenIndex)
                              : document.positionAt(this._svtokens[_token].endTokenIndex);
-        return (this._document.uri == refDocumentPath) ? [endPos.line, endPos.character] : [refDocumentPath, [endPos.line, endPos.character]];
+        return (this._document.uri == refDocumentPath) ? { line: endPos.line, character: endPos.character } : { file: refDocumentPath, line: endPos.line, character: endPos.character };
     }
 
     private _getDefLocations(startToken: number, endToken: number): DefinitionLocations {
@@ -2874,7 +2874,7 @@ export namespace SystemVerilogParser {
         Symbols
     }
 
-    export type SystemVerilogPosition = [number, number]|[string, [number, number]]
+    export type SystemVerilogPosition = { file?: string, line: number, character: number };
     export type SystemVerilogSymbolInfo = SystemVerilogSymbol;
     export type SystemVerilogImportInfo = [string, string[]];
     export type SystemVerilogExportInfo = [string, string[]];
@@ -2899,7 +2899,7 @@ export namespace SystemVerilogParser {
         exportsInfo?: SystemVerilogExportsInfo
     };
 
-    export type SystemVerilogPositionJSON = SystemVerilogPosition;
+    export type SystemVerilogPositionJSON = [number, number]|[string, [number, number]];
     export type SystemVerilogSymbolInfoJSON = SystemVerilogSymbolJSON;
     export type SystemVerilogSymbolsInfoJSON = SystemVerilogSymbolInfoJSON[];
     export type SystemVerilogContainerSymbolsInfoJSON = (SystemVerilogSymbolsInfoJSON|SystemVerilogImportsInfo|SystemVerilogContainersInfoJSON|SystemVerilogExportsInfo)[];
@@ -3187,6 +3187,17 @@ export namespace SystemVerilogParser {
         }
     }
 
+    export function jsonToPosition(jsonPosition: SystemVerilogParser.SystemVerilogPositionJSON): SystemVerilogPosition {
+        let result: SystemVerilogPosition;
+        if (typeof jsonPosition[0] === "number") {
+            result = { line: jsonPosition[0], character: <number>(jsonPosition[1]) };
+        }
+        else {
+            result = { file: <string>(jsonPosition[0]), line: <number>(jsonPosition[1][0]), character: <number>(jsonPosition[1][1]) };
+        }
+        return result;
+    }
+
     export function jsonToFileSymbolsInfo(file: string, jsonFileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfoJSON): SystemVerilogFileSymbolsInfo {
         try {
             let fileSymbolsInfo: SystemVerilogFileSymbolsInfo = {};
@@ -3197,7 +3208,7 @@ export namespace SystemVerilogParser {
                     for (let jsonContainerInfo of jsonFileSymbolsInfo[FileInfoIndex.Containers]) {
                         fileSymbolsInfo.containersInfo.push({
                             symbol: SystemVerilogSymbol.fromJSON(file, <SystemVerilogSymbolJSON>(jsonContainerInfo[0][0])),
-                            position: <SystemVerilogPositionJSON>(jsonContainerInfo[0][1]),
+                            position: jsonToPosition(<SystemVerilogPositionJSON>(jsonContainerInfo[0][1])),
                             info: _jsonToContainerSymbolsInfo(file, <SystemVerilogContainerSymbolsInfoJSON>(jsonContainerInfo[1]))
                         });
                     }
@@ -3272,8 +3283,19 @@ export namespace SystemVerilogParser {
         return result;
     }
 
+    function _positionToJson(pos: SystemVerilogPosition): SystemVerilogPositionJSON {
+        let result: SystemVerilogPositionJSON;
+        if (pos.file == undefined) {
+            result = [pos.line, pos.character];
+        }
+        else {
+            result = [pos.file, [pos.line, pos.character]];
+        }
+        return result;
+    }
+
     function _containerInfoToJson(containerInfo: SystemVerilogParser.SystemVerilogContainerInfo): SystemVerilogContainerInfoJSON {
-        return [[containerInfo.symbol.toJSON(), containerInfo.position], _containerSymbolsInfoToJson(containerInfo.info)];
+        return [[containerInfo.symbol.toJSON(), _positionToJson(containerInfo.position)], _containerSymbolsInfoToJson(containerInfo.info)];
     }
 
     export function fileSymbolsInfoToJson(fileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo): SystemVerilogFileSymbolsInfoJSON {
