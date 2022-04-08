@@ -22,6 +22,7 @@ import {
 
 import {
     MacroInfo,
+    PreprocCacheEntry,
     PreprocIncInfo,
     PreprocInfo,
     SystemVerilogPreprocessor
@@ -287,7 +288,7 @@ export class SystemVerilogParser {
 
     private _document: TextDocument;
     private _documentPath: string;
-    private _includeCache: Map<string, [string, PreprocIncInfo, TextDocument]>;
+    private _preprocCache: Map<string, PreprocCacheEntry>;
     private _fileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo;
     private _svtokens: ParseToken[];
     private _tokenOrder: [string, number][];
@@ -397,7 +398,7 @@ export class SystemVerilogParser {
     public tokenize(_text: string, includeFilePaths: string[], userDefinesMacroInfo: Map<string, MacroInfo>): [ParseToken[], [string, number][], SystemVerilogSymbol[]] {
         try {
             let preprocParser: SystemVerilogPreprocessor = new SystemVerilogPreprocessor();
-            let preprocInfo: PreprocInfo = preprocParser.parse(this._document, includeFilePaths, this._includeCache, userDefinesMacroInfo);
+            let preprocInfo: PreprocInfo = preprocParser.parse(this._document, includeFilePaths, this._preprocCache, userDefinesMacroInfo);
 
             if (preprocInfo.includes.size > 0) {
                 this._fileSymbolsInfo.includesInfo = [...preprocInfo.includes];
@@ -548,14 +549,14 @@ export class SystemVerilogParser {
         }
         else {
             let shortFile: string;
-            for (let [sfile, fileInfo] of this._includeCache) {
-                if (fileInfo[0] == file) {
+            for (let [sfile, fileInfo] of this._preprocCache) {
+                if (fileInfo.file == file) {
                     shortFile = sfile;
                     break;
                 }
             }
             if (shortFile) {
-                document = this._includeCache.get(shortFile)[2];
+                document = this._preprocCache.get(shortFile).doc;
             }
             else {
                 ConnectionLogger.error(`Could not find include cache for ${file}`);
@@ -2781,12 +2782,12 @@ export class SystemVerilogParser {
         return true;
     }
 
-    public parse(document: TextDocument, includeFilePaths: string[], includeCache: Map<string, [string, PreprocIncInfo, TextDocument]>,
+    public parse(document: TextDocument, includeFilePaths: string[], preprocCache: Map<string, PreprocCacheEntry>,
                  userDefinesMacroInfo: Map<string, MacroInfo>, _precision: string="full", _maxDepth: number=-1, text?: string): [SystemVerilogParser.SystemVerilogFileSymbolsInfo, string[]] {
         try {
             this._document = document;
             this._documentPath = uriToPath(document.uri);
-            this._includeCache = includeCache;
+            this._preprocCache = preprocCache;
             this._fileSymbolsInfo = {};
             let preprocSymbols: SystemVerilogSymbol[];
             [this._svtokens, this._tokenOrder, preprocSymbols] = this.tokenize(text || this._document.getText(), includeFilePaths, userDefinesMacroInfo);
@@ -2857,18 +2858,18 @@ export class SystemVerilogParser {
         }
     }
 
-    public static includeCacheToJSON(includeCache: Map<string, [string, PreprocIncInfo, TextDocument]>) {
+    public static preprocCacheToJSON(preprocCache: Map<string, PreprocCacheEntry>) {
         try {
-            return Array.from(includeCache.entries()).map(e => [e[0], [e[1][0], SystemVerilogPreprocessor.preprocIncInfoToJSON(e[1][1]), e[1][2]]]);
+            return Array.from(preprocCache.entries()).map(e => [e[0], [e[1].file, SystemVerilogPreprocessor.preprocIncInfoToJSON(e[1].info), e[1].doc]]);
         } catch (error) {
             ConnectionLogger.error(error);
             return new Map();
         }
     }
 
-    public static includeCacheFromJSON(includeCacheJSON): Map<string, [string, PreprocIncInfo, TextDocument]> {
+    public static preprocCacheFromJSON(preprocCacheJSON): Map<string, PreprocCacheEntry> {
         try {
-            return new Map(includeCacheJSON.map(e => [e[0], [e[1][0], SystemVerilogPreprocessor.preprocIncInfoFromJSON(e[0], e[1][1]), TextDocument.create(e[1][2]._uri, e[1][2]._languageId, e[1][2]._version, e[1][2]._content)]]));
+            return new Map(preprocCacheJSON.map(e => [e[0], { file: e[1][0], info: SystemVerilogPreprocessor.preprocIncInfoFromJSON(e[0], e[1][1]), doc: TextDocument.create(e[1][2]._uri, e[1][2]._languageId, e[1][2]._version, e[1][2]._content) }]));
         } catch(error) {
             ConnectionLogger.error(error);
             return new Map();

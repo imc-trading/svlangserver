@@ -16,6 +16,7 @@ import {
 } from './svsymbol';
 
 import {
+    PreprocCacheEntry,
     PreprocIncInfo,
     SystemVerilogPreprocessor
 } from './svpreprocessor';
@@ -75,7 +76,7 @@ export class SystemVerilogIndexer {
     private _clientDir: string | null;
     private _srcFiles: string[];
     private _libFiles: string[];
-    private _preprocCache: Map<string, [string, PreprocIncInfo, TextDocument]> = new Map();
+    private _preprocCache: Map<string, PreprocCacheEntry> = new Map();
     private _indexedFilesInfo: Map<string, IndexFileInfo> = new Map();
     private _pkgToFiles: Map<string, Set<string>> = new Map();
     private _moduleToFiles: Map<string, Set<string>> = new Map();
@@ -287,9 +288,9 @@ export class SystemVerilogIndexer {
                 }
 
                 if (waitPreprocCache) {
-                    for (let [k, v] of SystemVerilogParser.includeCacheFromJSON(jsonFileSymbolsInfo)) {
+                    for (let [k, v] of SystemVerilogParser.preprocCacheFromJSON(jsonFileSymbolsInfo)) {
                         this._preprocCache.set(k, v);
-                        this._setHeaderSymbols(v[0], v[1]);
+                        this._setHeaderSymbols(v.file, v.info);
                     }
                     ConnectionLogger.log(`INFO: Done indexing ${this._srcFiles.length + this._preprocCache.size} files!!!`);
                     this._indexProgress = IndexProgressType.Done;
@@ -488,7 +489,7 @@ export class SystemVerilogIndexer {
         let pkgs: string[] = this._getContainers(fileSymbolsInfo).pkgs;
         this._indexedFilesInfo.set(file, {symbolsInfo: fileSymbolsInfo, pkgdeps: pkgs.length > 0 ? pkgdeps : null, rank: rank});
         for (let entry of this._preprocCache.values()) {
-            this._setHeaderSymbols(entry[0], entry[1]);
+            this._setHeaderSymbols(entry.file, entry.info);
         }
     }
 
@@ -505,7 +506,7 @@ export class SystemVerilogIndexer {
         }
         this._incrementalUpdateFileInfo(file, symbolsInfo, pkgdeps);
         for (let entry of this._preprocCache.values()) {
-            this._indexedFilesInfo.set(entry[0], {symbolsInfo: symbolsInfo, pkgdeps: null, rank: 0});
+            this._indexedFilesInfo.set(entry.file, {symbolsInfo: symbolsInfo, pkgdeps: null, rank: 0});
         }
     }
 
@@ -1509,12 +1510,10 @@ export class SystemVerilogIndexer {
 
     public getIncFilePathAndSymbol(filePath: string): [string, SystemVerilogSymbol] {
         if (this._preprocCache.has(filePath)) {
-            let actFilePath: string;
-            let preprocIncInfo: PreprocIncInfo;
-            [actFilePath, preprocIncInfo,] = this._preprocCache.get(filePath);
-            let symbol: SystemVerilogSymbol = preprocIncInfo.symbols.find(s => s.type.indexOf("includefile") >= 0);
+            let entry: PreprocCacheEntry = this._preprocCache.get(filePath);
+            let symbol: SystemVerilogSymbol = entry.info.symbols.find(s => s.type.indexOf("includefile") >= 0);
             if (symbol) {
-                return [pathToUri(actFilePath), symbol];
+                return [pathToUri(entry.file), symbol];
             }
         }
         return [undefined, undefined];

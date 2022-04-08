@@ -47,6 +47,7 @@ export type PreprocIncInfo = { symbols: SystemVerilogSymbol[], postTokens: PostT
 export type PreprocIncInfoJSON = [SystemVerilogSymbolJSON[], PostToken[], [string, number][], MacroChangeJSON[], [string, number][], string[]];
 export type PreprocInfo = { symbols: SystemVerilogSymbol[], postTokens: PostToken[], tokenOrder: [string, number][], includes: Set<string> };
 type TokenMarker = number;
+export type PreprocCacheEntry = { file: string, info: PreprocIncInfo, doc: TextDocument };
 const DEBUG_MODE: number = 0;
 
 class PreprocTokenManager {
@@ -164,7 +165,7 @@ export class SystemVerilogPreprocessor {
     private _filePath: string;
     private _fileList: Set<string>;
     private _includeFilePaths: string[];
-    private _includeCache: Map<string, [string, PreprocIncInfo, TextDocument]>;
+    private _preprocCache: Map<string, PreprocCacheEntry>;
     private _preprocIncInfo: PreprocIncInfo;
     private _macroInfo: Map<string, MacroInfo>;
     private _tokenManager: PreprocTokenManager;
@@ -564,7 +565,7 @@ export class SystemVerilogPreprocessor {
             if (order[1] > prevIndex) {
                 allMacroChanges = allMacroChanges.concat(macroChanges.slice(prevIndex, order[1]));
             }
-            let incInfo: PreprocIncInfo = this._includeCache.get(order[0])[1];
+            let incInfo: PreprocIncInfo = this._preprocCache.get(order[0]).info;
             allMacroChanges = allMacroChanges.concat(this._getAllMacroChanges(incInfo.macroChanges, incInfo.macroChangeOrder));
             prevIndex = order[1];
         }
@@ -627,10 +628,10 @@ export class SystemVerilogPreprocessor {
 
             let includeFilePath: string;
             let preprocIncInfo: PreprocIncInfo;
-            if (this._includeCache.has(fileName)) {
-                let incInfo: [string, PreprocIncInfo, TextDocument] = this._includeCache.get(fileName);
-                includeFilePath = incInfo[0];
-                preprocIncInfo = incInfo[1];
+            if (this._preprocCache.has(fileName)) {
+                let incInfo: PreprocCacheEntry = this._preprocCache.get(fileName);
+                includeFilePath = incInfo.file;
+                preprocIncInfo = incInfo.info;
                 this._applyMacroChanges(preprocIncInfo.macroChanges, preprocIncInfo.macroChangeOrder);
                 this._preprocIncInfo.includes.add(includeFilePath);
             }
@@ -642,18 +643,18 @@ export class SystemVerilogPreprocessor {
                     }
                 }
                 if (includeFilePath) {
-                    let allCachedIncFiles: Map<string, string> = new Map(Array.from(this._includeCache).map(([k, v]) => [v[0], k]));
+                    let allCachedIncFiles: Map<string, string> = new Map(Array.from(this._preprocCache).map(([k, v]) => [v.file, k]));
                     if (allCachedIncFiles.has(includeFilePath)) {
-                        preprocIncInfo = this._includeCache.get(allCachedIncFiles.get(includeFilePath))[1];
-                        let document: TextDocument = this._includeCache.get(allCachedIncFiles.get(includeFilePath))[2];
-                        this._includeCache.set(fileName, [includeFilePath, preprocIncInfo, document]);
+                        preprocIncInfo = this._preprocCache.get(allCachedIncFiles.get(includeFilePath)).info;
+                        let document: TextDocument = this._preprocCache.get(allCachedIncFiles.get(includeFilePath)).doc;
+                        this._preprocCache.set(fileName, { file: includeFilePath, info: preprocIncInfo, doc: document });
                         this._applyMacroChanges(preprocIncInfo.macroChanges, preprocIncInfo.macroChangeOrder);
                     }
                     else {
                         try {
                             let data = fsReadFileSync(includeFilePath);
                             let document: TextDocument = TextDocument.create(pathToUri(includeFilePath), "SystemVerilog", 0, data.toString());
-                            preprocIncInfo = (new SystemVerilogPreprocessor())._parseInc(document, this._includeFilePaths, this._includeCache, this._macroInfo, this._fileList);
+                            preprocIncInfo = (new SystemVerilogPreprocessor())._parseInc(document, this._includeFilePaths, this._preprocCache, this._macroInfo, this._fileList);
                             let incFileSymbol: SystemVerilogSymbol = new SystemVerilogSymbol(
                                 includeFilePath,
                                 Range.create(0, 0, 0, 0),
@@ -662,7 +663,7 @@ export class SystemVerilogPreprocessor {
                                 ["includefile"]
                             );
                             preprocIncInfo.symbols.unshift(incFileSymbol);
-                            this._includeCache.set(fileName, [includeFilePath, preprocIncInfo, document]);
+                            this._preprocCache.set(fileName, { file: includeFilePath, info: preprocIncInfo, doc: document });
                         }
                         catch (err) {
                             ConnectionLogger.warn(`Could not process include file ${includeFilePath} - ${err}`);
@@ -823,13 +824,13 @@ export class SystemVerilogPreprocessor {
         }
     }
 
-    private _parseInc(document: TextDocument, includeFilePaths: string[], includeCache: Map<string, [string, PreprocIncInfo, TextDocument]>, macroInfo: Map<string, MacroInfo>, fileList: Set<string>, text?: string): PreprocIncInfo {
+    private _parseInc(document: TextDocument, includeFilePaths: string[], preprocCache: Map<string, PreprocCacheEntry>, macroInfo: Map<string, MacroInfo>, fileList: Set<string>, text?: string): PreprocIncInfo {
         let preText: string = text || document.getText();
         this._document = document;
         this._filePath = uriToPath(document.uri);
         this._fileList = fileList;
         this._includeFilePaths = includeFilePaths;
-        this._includeCache = includeCache;
+        this._preprocCache = preprocCache;
         this._preprocIncInfo = { symbols: [], postTokens: [], tokenOrder: [], macroChanges: [], macroChangeOrder: [], includes: new Set() };
         this._macroInfo = macroInfo;
         this._tokenManager = new PreprocTokenManager(SystemVerilogPreprocessor.tokenize(preText));
@@ -935,8 +936,8 @@ export class SystemVerilogPreprocessor {
                 allTokenOrder.push([filePath, allPostTokens.length]);
                 allPostTokens = allPostTokens.concat(postTokens.slice(prevIndex, order[1]));
             }
-            let incInfo: PreprocIncInfo = this._includeCache.get(order[0])[1];
-            let incPostTokensInfo: [PostToken[], [string, number][]] = this._getAllPostTokens(this._includeCache.get(order[0])[0], incInfo.postTokens, incInfo.tokenOrder);
+            let incInfo: PreprocIncInfo = this._preprocCache.get(order[0]).info;
+            let incPostTokensInfo: [PostToken[], [string, number][]] = this._getAllPostTokens(this._preprocCache.get(order[0]).file, incInfo.postTokens, incInfo.tokenOrder);
             for (let incTokenOrder of incPostTokensInfo[1]) {
                 allTokenOrder.push([incTokenOrder[0], allPostTokens.length + incTokenOrder[1]]);
             }
@@ -950,9 +951,9 @@ export class SystemVerilogPreprocessor {
         return [allPostTokens, allTokenOrder];
     }
 
-    public parse(document: TextDocument, includeFilePaths: string[], includeCache: Map<string, [string, PreprocIncInfo, TextDocument]>, macroInfo: Map<string, MacroInfo>, text?: string): PreprocInfo {
+    public parse(document: TextDocument, includeFilePaths: string[], preprocCache: Map<string, PreprocCacheEntry>, macroInfo: Map<string, MacroInfo>, text?: string): PreprocInfo {
         try {
-            let preprocIncInfo: PreprocIncInfo = this._parseInc(document, includeFilePaths, includeCache, macroInfo, new Set(), text);
+            let preprocIncInfo: PreprocIncInfo = this._parseInc(document, includeFilePaths, preprocCache, macroInfo, new Set(), text);
             let postTokensInfo: [PostToken[], [string, number][]] = this._getAllPostTokens(this._filePath, this._preprocIncInfo.postTokens, this._preprocIncInfo.tokenOrder);
             return {
                 symbols: preprocIncInfo.symbols,
