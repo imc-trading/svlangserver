@@ -82,7 +82,8 @@ function _jsonToContainerSymbolsInfo(file: string, jsonContainerSymbolsInfo: Sys
     return containerSymbolsInfo;
 }
 
-type ImportExportMap = Map<string, [Boolean, Set<string>, number]>;
+type ImportExportEntry = { allIncluded: Boolean, index: number };
+type ImportExportMap = Map<string, ImportExportEntry>;
 
 class ContainerStack {
     private _stack: [SystemVerilogParser.SystemVerilogFileSymbolsInfo, SystemVerilogParser.SystemVerilogContainersInfo];
@@ -187,11 +188,11 @@ class ContainerStack {
         let importParts: string[] = importItemToken.text.split('::');
         let importHierPath: string = [importParts[0], ...this.toStringList()].join(' ');
         if (!this._importMap.has(importHierPath)) {
-            this._importMap.set(importHierPath, [false, new Set(), undefined]);
+            this._importMap.set(importHierPath, { allIncluded: false, index: undefined });
         }
 
-        let importInfo: [Boolean, Set<string>, number] = this._importMap.get(importHierPath);
-        if (importInfo[0]) {
+        let importInfo: ImportExportEntry = this._importMap.get(importHierPath);
+        if (importInfo.allIncluded) {
             return;
         }
 
@@ -210,18 +211,17 @@ class ContainerStack {
             importsInfo = containerSymbolsInfo.importsInfo;
         }
 
-        if (importInfo[2] == undefined) {
-            importInfo[2] = importsInfo.length;
+        if (importInfo.index == undefined) {
+            importInfo.index = importsInfo.length;
             importsInfo.push({ pkg: importParts[0], symbolsText: [] });
         }
 
         if (importParts[1] == "*") {
-            importInfo[0] = true;
-            importInfo[1] = new Set(["*"]);
-            importsInfo[importInfo[2]].symbolsText = ["*"];
+            importInfo.allIncluded = true;
+            importsInfo[importInfo.index].symbolsText = ["*"];
         }
         else {
-            importsInfo[importInfo[2]].symbolsText.push(importParts[1]);
+            importsInfo[importInfo.index].symbolsText.push(importParts[1]);
         }
     }
 
@@ -229,15 +229,24 @@ class ContainerStack {
         let exportParts: string[] = exportItemToken.text.split('::');
         let exportHierPath: string = [exportParts[0], ...this.toStringList()].join(' ');
         if (!this._exportMap.has(exportHierPath)) {
-            this._exportMap.set(exportHierPath, [false, new Set(), undefined]);
+            this._exportMap.set(exportHierPath, { allIncluded: false, index: undefined });
         }
-
-        if (exportParts[0] == "*") {
+        else if (exportParts[0] == "*") {
             return;
         }
 
-        let exportInfo: [Boolean, Set<string>, number] = this._exportMap.get(exportHierPath);
-        if (exportInfo[0]) {
+        if (exportParts[0] == "*") {
+            if (this._stack[1].length <= 0) {
+                this._stack[0].exportsInfo = [{pkg: exportParts[0], symbolsText: ["*"] }];
+            }
+            else {
+                this._stack[1][this._stack[1].length - 1].info.exportsInfo = [{pkg: exportParts[0], symbolsText: ["*"] }];
+            }
+            return;
+        }
+
+        let exportInfo: ImportExportEntry = this._exportMap.get(exportHierPath);
+        if (exportInfo.allIncluded) {
             return;
         }
 
@@ -256,18 +265,17 @@ class ContainerStack {
             exportsInfo = containerSymbolsInfo.exportsInfo;
         }
 
-        if (exportInfo[2] == undefined) {
-            exportInfo[2] = exportsInfo.length;
+        if (exportInfo.index == undefined) {
+            exportInfo.index = exportsInfo.length;
             exportsInfo.push({ pkg: exportParts[0], symbolsText: [] });
         }
 
         if (exportParts[1] == "*") {
-            exportInfo[0] = true;
-            exportInfo[1] = new Set(["*"]);
-            exportsInfo[exportInfo[2]].symbolsText = ["*"];
+            exportInfo.allIncluded = true;
+            exportsInfo[exportInfo.index].symbolsText = ["*"];
         }
         else {
-            exportsInfo[exportInfo[2]].symbolsText.push(exportParts[1]);
+            exportsInfo[exportInfo.index].symbolsText.push(exportParts[1]);
         }
     }
 }
