@@ -25,7 +25,8 @@ import {
     PreprocCacheEntry,
     PreprocIncInfo,
     PreprocInfo,
-    SystemVerilogPreprocessor
+    SystemVerilogPreprocessor,
+    TokenOrderEntry
 } from "./svpreprocessor";
 
 const DEBUG_MODE: number = 0;
@@ -87,13 +88,13 @@ type ImportExportEntry = { allIncluded: Boolean, index: number };
 type ImportExportMap = Map<string, ImportExportEntry>;
 
 class ContainerStack {
-    private _stack: [SystemVerilogParser.SystemVerilogFileSymbolsInfo, SystemVerilogParser.SystemVerilogContainersInfo];
+    private _stack: { fileInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo, containersInfo: SystemVerilogParser.SystemVerilogContainersInfo };
     private _symbolMap: Map<string, number>;
     private _importMap: ImportExportMap;
     private _exportMap: ImportExportMap;
 
     constructor(fileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo) {
-        this._stack = [fileSymbolsInfo, []];
+        this._stack = { fileInfo: fileSymbolsInfo, containersInfo: [] };
         this._symbolMap = new Map();
         this._importMap = new Map();
         this._exportMap = new Map();
@@ -101,14 +102,14 @@ class ContainerStack {
 
     push(symbol: SystemVerilogSymbol): SystemVerilogSymbol {
         let containerSymbols: SystemVerilogParser.SystemVerilogContainersInfo;
-        if (this._stack[1].length <= 0) {
-            if (this._stack[0].containersInfo == undefined) {
-                this._stack[0].containersInfo = [];
+        if (this._stack.containersInfo.length <= 0) {
+            if (this._stack.fileInfo.containersInfo == undefined) {
+                this._stack.fileInfo.containersInfo = [];
             }
-            containerSymbols = this._stack[0].containersInfo;
+            containerSymbols = this._stack.fileInfo.containersInfo;
         }
         else {
-            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = this._stack[1][this._stack[1].length - 1].info;
+            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = this._stack.containersInfo[this._stack.containersInfo.length - 1].info;
             if (containerSymbolsInfo.containersInfo == undefined) {
                 containerSymbolsInfo.containersInfo = [];
             }
@@ -130,20 +131,20 @@ class ContainerStack {
             resSymbol = symbol;
         }
 
-        this._stack[1].push(containerInfo);
+        this._stack.containersInfo.push(containerInfo);
         return resSymbol;
     }
 
     pushSymbol(symbol: SystemVerilogSymbol): SystemVerilogSymbol {
         let symbols: SystemVerilogParser.SystemVerilogSymbolsInfo;
-        if (this._stack[1].length <= 0) {
-            if (this._stack[0].symbolsInfo == undefined) {
-                this._stack[0].symbolsInfo = [];
+        if (this._stack.containersInfo.length <= 0) {
+            if (this._stack.fileInfo.symbolsInfo == undefined) {
+                this._stack.fileInfo.symbolsInfo = [];
             }
-            symbols = this._stack[0].symbolsInfo;
+            symbols = this._stack.fileInfo.symbolsInfo;
         }
         else {
-            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = this._stack[1][this._stack[1].length - 1].info;
+            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = this._stack.containersInfo[this._stack.containersInfo.length - 1].info;
             if (containerSymbolsInfo.symbolsInfo == undefined) {
                 containerSymbolsInfo.symbolsInfo = [];
             }
@@ -166,23 +167,23 @@ class ContainerStack {
     }
 
     getContainerDocumentPath(uri: string): string {
-        if (this._stack[1].length <= 0) {
+        if (this._stack.containersInfo.length <= 0) {
             return undefined;
         }
-        return this._stack[1][this._stack[1].length - 1].symbol.getSymbolDocumentPath(uri);
+        return this._stack.containersInfo[this._stack.containersInfo.length - 1].symbol.getSymbolDocumentPath(uri);
     }
 
     pop(endPosition?: SystemVerilogParser.SystemVerilogPosition) {
-        if (this._stack[1].length <= 0) {
+        if (this._stack.containersInfo.length <= 0) {
             ConnectionLogger.error(`ContainerStack is already empty!`);
             return;
         }
-        this._stack[1][this._stack[1].length - 1].position = endPosition;
-        this._stack[1].pop();
+        this._stack.containersInfo[this._stack.containersInfo.length - 1].position = endPosition;
+        this._stack.containersInfo.pop();
     }
 
     toStringList(): string[] {
-        return this._stack[1].map(e => e.symbol.name);
+        return this._stack.containersInfo.map(e => e.symbol.name);
     }
 
     pushImportItem(importItemToken: ParseToken) {
@@ -198,14 +199,14 @@ class ContainerStack {
         }
 
         let importsInfo: SystemVerilogParser.SystemVerilogImportsInfo;
-        if (this._stack[1].length <= 0) {
-            if (this._stack[0].importsInfo == undefined) {
-                this._stack[0].importsInfo = [];
+        if (this._stack.containersInfo.length <= 0) {
+            if (this._stack.fileInfo.importsInfo == undefined) {
+                this._stack.fileInfo.importsInfo = [];
             }
-            importsInfo = this._stack[0].importsInfo;
+            importsInfo = this._stack.fileInfo.importsInfo;
         }
         else {
-            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = this._stack[1][this._stack[1].length - 1].info;
+            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = this._stack.containersInfo[this._stack.containersInfo.length - 1].info;
             if (containerSymbolsInfo.importsInfo == undefined) {
                 containerSymbolsInfo.importsInfo = [];
             }
@@ -237,11 +238,11 @@ class ContainerStack {
         }
 
         if (exportParts[0] == "*") {
-            if (this._stack[1].length <= 0) {
-                this._stack[0].exportsInfo = [{pkg: exportParts[0], symbolsText: ["*"] }];
+            if (this._stack.containersInfo.length <= 0) {
+                this._stack.fileInfo.exportsInfo = [{pkg: exportParts[0], symbolsText: ["*"] }];
             }
             else {
-                this._stack[1][this._stack[1].length - 1].info.exportsInfo = [{pkg: exportParts[0], symbolsText: ["*"] }];
+                this._stack.containersInfo[this._stack.containersInfo.length - 1].info.exportsInfo = [{pkg: exportParts[0], symbolsText: ["*"] }];
             }
             return;
         }
@@ -252,14 +253,14 @@ class ContainerStack {
         }
 
         let exportsInfo: SystemVerilogParser.SystemVerilogExportsInfo;
-        if (this._stack[1].length <= 0) {
-            if (this._stack[0].exportsInfo == undefined) {
-                this._stack[0].exportsInfo = [];
+        if (this._stack.containersInfo.length <= 0) {
+            if (this._stack.fileInfo.exportsInfo == undefined) {
+                this._stack.fileInfo.exportsInfo = [];
             }
-            exportsInfo = this._stack[0].exportsInfo;
+            exportsInfo = this._stack.fileInfo.exportsInfo;
         }
         else {
-            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = this._stack[1][this._stack[1].length - 1].info;
+            let containerSymbolsInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo = this._stack.containersInfo[this._stack.containersInfo.length - 1].info;
             if (containerSymbolsInfo.exportsInfo == undefined) {
                 containerSymbolsInfo.exportsInfo = [];
             }
@@ -291,7 +292,7 @@ export class SystemVerilogParser {
     private _preprocCache: Map<string, PreprocCacheEntry>;
     private _fileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo;
     private _svtokens: ParseToken[];
-    private _tokenOrder: [string, number][];
+    private _tokenOrder: TokenOrderEntry[];
     private _containerStack: ContainerStack;
     private _currTokenNum: number;
 
@@ -395,7 +396,7 @@ export class SystemVerilogParser {
         }
     }
 
-    public tokenize(_text: string, includeFilePaths: string[], userDefinesMacroInfo: Map<string, MacroInfo>): [ParseToken[], [string, number][], SystemVerilogSymbol[]] {
+    public tokenize(_text: string, includeFilePaths: string[], userDefinesMacroInfo: Map<string, MacroInfo>): [ParseToken[], TokenOrderEntry[], SystemVerilogSymbol[]] {
         try {
             let preprocParser: SystemVerilogPreprocessor = new SystemVerilogPreprocessor();
             let preprocInfo: PreprocInfo = preprocParser.parse(this._document, includeFilePaths, this._preprocCache, userDefinesMacroInfo);
@@ -407,25 +408,25 @@ export class SystemVerilogParser {
             let postText: string = preprocInfo.postTokens.map(tok => tok.text).join('');
             let tokens: GrammarToken[] = this._completionGrammarEngine.tokenize(postText);
             let parseTokens: ParseToken[] = tokens.map(token => { return {text: token.text, scopes: token.scopes, startTokenIndex: undefined, endTokenIndex: undefined}; });
-            let tokenOrder: [string, number][] = [];
+            let tokenOrder: TokenOrderEntry[] = [];
             let currParseToken: number = 0;
             let tokenText: string = "";
             let tokenOrderIndex: number = 0;
             let tokenOrderFile: string;
             for (let i: number = 0; i < preprocInfo.postTokens.length; i++) {
                 if ((tokenOrderIndex < preprocInfo.tokenOrder.length) &&
-                    (preprocInfo.tokenOrder[tokenOrderIndex][1] == i)) {
+                    (preprocInfo.tokenOrder[tokenOrderIndex].tokenNum == i)) {
                     if ((tokenText != "") && (parseTokens[currParseToken].text.trim() != "")) {
-                        ConnectionLogger.error(`assumption about tokens not split across files might be broken for ${this._documentPath} at ${preprocInfo.tokenOrder[tokenOrderIndex][1]}`);
+                        ConnectionLogger.error(`assumption about tokens not split across files might be broken for ${this._documentPath} at ${preprocInfo.tokenOrder[tokenOrderIndex].tokenNum}`);
                     }
-                    tokenOrderFile = preprocInfo.tokenOrder[tokenOrderIndex][0];
+                    tokenOrderFile = preprocInfo.tokenOrder[tokenOrderIndex].file;
                     tokenOrderIndex++;
                 }
 
                 if (tokenText == "") {
                     parseTokens[currParseToken].startTokenIndex = preprocInfo.postTokens[i].index;
                     if (tokenOrderFile != undefined) {
-                        tokenOrder.push([tokenOrderFile, currParseToken]);
+                        tokenOrder.push({ file: tokenOrderFile, tokenNum: currParseToken });
                     }
                     tokenOrderFile = undefined;
                 }
@@ -457,7 +458,7 @@ export class SystemVerilogParser {
     private _getTokenOrderIndex(token: number): number {
         let tokenOrderIndex: number;
         for (let i: number = this._tokenOrder.length - 1; i >= 0; i--) {
-            if (token >= this._tokenOrder[i][1]) {
+            if (token >= this._tokenOrder[i].tokenNum) {
                 tokenOrderIndex = i;
                 break;
             }
@@ -500,7 +501,7 @@ export class SystemVerilogParser {
 
         let tokenOrderIndices: number[] = [tokenOrderIndex];
         tokenOrderIndex++;
-        while ((tokenOrderIndex < this._tokenOrder.length) && (endToken >= this._tokenOrder[tokenOrderIndex][1])) {
+        while ((tokenOrderIndex < this._tokenOrder.length) && (endToken >= this._tokenOrder[tokenOrderIndex].tokenNum)) {
             tokenOrderIndices.push(tokenOrderIndex);
             tokenOrderIndex++;
         }
@@ -518,9 +519,9 @@ export class SystemVerilogParser {
         for (let i: number = 1; i < tokenOrderIndices.length; i++) {
             defLocations.push(Range.create(
                 document.positionAt(this._svtokens[currToken].startTokenIndex),
-                document.positionAt(this._svtokens[this._tokenOrder[tokenOrderIndices[i]][1] - 1].endTokenIndex + 1)
+                document.positionAt(this._svtokens[this._tokenOrder[tokenOrderIndices[i]].tokenNum - 1].endTokenIndex + 1)
             ));
-            currToken = this._tokenOrder[tokenOrderIndices[i]][1];
+            currToken = this._tokenOrder[tokenOrderIndices[i]].tokenNum;
         }
         defLocations.push(Range.create(
             document.positionAt(this._svtokens[currToken].startTokenIndex),
@@ -541,7 +542,7 @@ export class SystemVerilogParser {
             return undefined;
         }
         else {
-            file = this._tokenOrder[tokenOrderIndex][0];
+            file = this._tokenOrder[tokenOrderIndex].file;
         }
 
         if (file == this._documentPath) {

@@ -8,8 +8,7 @@ import {
 
 import {
     MacroInfo,
-    PreprocCacheEntry,
-    PreprocIncInfo
+    PreprocCacheEntry
 } from './svpreprocessor';
 
 import {

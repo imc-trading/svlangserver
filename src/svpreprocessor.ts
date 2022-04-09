@@ -39,13 +39,17 @@ class ReplToken extends GrammarToken {
     endIndex: number;
 }
 
+export type TokenOrderEntry = { file: string, tokenNum: number };
+type TokenOrderEntryJSON = [string, number];
 export type MacroInfo = { args: Map<string, number>, default: GrammarToken[][], definition: GrammarToken[], symbol: SystemVerilogSymbol, file: string };
 type MacroInfoJSON = [[string, number][], GrammarToken[][], GrammarToken[], SystemVerilogSymbolJSON, string];
 type MacroChange = { action: MacroAction, macroName: string, macroInfo: MacroInfo };
 type MacroChangeJSON = [MacroAction, string, MacroInfoJSON];
-export type PreprocIncInfo = { symbols: SystemVerilogSymbol[], postTokens: PostToken[], tokenOrder: [string, number][], macroChanges: MacroChange[], macroChangeOrder: [string, number][], includes: Set<string> };
-export type PreprocIncInfoJSON = [SystemVerilogSymbolJSON[], PostToken[], [string, number][], MacroChangeJSON[], [string, number][], string[]];
-export type PreprocInfo = { symbols: SystemVerilogSymbol[], postTokens: PostToken[], tokenOrder: [string, number][], includes: Set<string> };
+export type MacroChangeOrderEntry = { file: string, index: number };
+type MacroChangeOrderEntryJSON = [string, number];
+export type PreprocIncInfo = { symbols: SystemVerilogSymbol[], postTokens: PostToken[], tokenOrder: TokenOrderEntry[], macroChanges: MacroChange[], macroChangeOrder: MacroChangeOrderEntry[], includes: Set<string> };
+export type PreprocIncInfoJSON = [SystemVerilogSymbolJSON[], PostToken[], TokenOrderEntryJSON[], MacroChangeJSON[], MacroChangeOrderEntryJSON[], string[]];
+export type PreprocInfo = { symbols: SystemVerilogSymbol[], postTokens: PostToken[], tokenOrder: TokenOrderEntry[], includes: Set<string> };
 type TokenMarker = number;
 export type PreprocCacheEntry = { file: string, info: PreprocIncInfo, doc: TextDocument };
 const DEBUG_MODE: number = 0;
@@ -558,16 +562,16 @@ export class SystemVerilogPreprocessor {
         return true;
     }
 
-    private _getAllMacroChanges(macroChanges: MacroChange[], macroChangeOrder: [string, number][]) {
+    private _getAllMacroChanges(macroChanges: MacroChange[], macroChangeOrder: MacroChangeOrderEntry[]): MacroChange[] {
         let allMacroChanges: MacroChange[] = [];
         let prevIndex: number = 0;
         for (let order of macroChangeOrder) {
-            if (order[1] > prevIndex) {
-                allMacroChanges = allMacroChanges.concat(macroChanges.slice(prevIndex, order[1]));
+            if (order.index > prevIndex) {
+                allMacroChanges = allMacroChanges.concat(macroChanges.slice(prevIndex, order.index));
             }
-            let incInfo: PreprocIncInfo = this._preprocCache.get(order[0]).info;
+            let incInfo: PreprocIncInfo = this._preprocCache.get(order.file).info;
             allMacroChanges = allMacroChanges.concat(this._getAllMacroChanges(incInfo.macroChanges, incInfo.macroChangeOrder));
-            prevIndex = order[1];
+            prevIndex = order.index;
         }
         if (prevIndex < macroChanges.length) {
             allMacroChanges = allMacroChanges.concat(macroChanges.slice(prevIndex));
@@ -576,7 +580,7 @@ export class SystemVerilogPreprocessor {
 
     }
 
-    private _applyMacroChanges(macroChanges: MacroChange[], macroChangeOrder: [string, number][]) {
+    private _applyMacroChanges(macroChanges: MacroChange[], macroChangeOrder: MacroChangeOrderEntry[]) {
         let allMacroChanges: MacroChange[] = this._getAllMacroChanges(macroChanges, macroChangeOrder);
 
         for (let macroChange of allMacroChanges) {
@@ -680,11 +684,11 @@ export class SystemVerilogPreprocessor {
             }
 
             if (preprocIncInfo.postTokens.length > 0) {
-                this._preprocIncInfo.tokenOrder.push([fileName, this._preprocIncInfo.postTokens.length]);
+                this._preprocIncInfo.tokenOrder.push({ file: fileName, tokenNum: this._preprocIncInfo.postTokens.length });
             }
 
             if (preprocIncInfo.macroChanges.length > 0) {
-                this._preprocIncInfo.macroChangeOrder.push([fileName, this._preprocIncInfo.macroChanges.length]);
+                this._preprocIncInfo.macroChangeOrder.push({ file: fileName, index: this._preprocIncInfo.macroChanges.length });
             }
         }
 
@@ -927,25 +931,25 @@ export class SystemVerilogPreprocessor {
         return this._preprocIncInfo;
     }
 
-    private _getAllPostTokens(filePath: string, postTokens: PostToken[], tokenOrder: [string, number][]): [PostToken[], [string, number][]] {
+    private _getAllPostTokens(filePath: string, postTokens: PostToken[], tokenOrder: TokenOrderEntry[]): [PostToken[], TokenOrderEntry[]] {
         let allPostTokens: PostToken[] = [];
-        let allTokenOrder: [string, number][] = [];
+        let allTokenOrder: TokenOrderEntry[] = [];
         let prevIndex: number = 0;
         for (let order of tokenOrder) {
-            if (order[1] > prevIndex) {
-                allTokenOrder.push([filePath, allPostTokens.length]);
-                allPostTokens = allPostTokens.concat(postTokens.slice(prevIndex, order[1]));
+            if (order.tokenNum > prevIndex) {
+                allTokenOrder.push({ file: filePath, tokenNum: allPostTokens.length });
+                allPostTokens = allPostTokens.concat(postTokens.slice(prevIndex, order.tokenNum));
             }
-            let incInfo: PreprocIncInfo = this._preprocCache.get(order[0]).info;
-            let incPostTokensInfo: [PostToken[], [string, number][]] = this._getAllPostTokens(this._preprocCache.get(order[0]).file, incInfo.postTokens, incInfo.tokenOrder);
+            let incInfo: PreprocIncInfo = this._preprocCache.get(order.file).info;
+            let incPostTokensInfo: [PostToken[], TokenOrderEntry[]] = this._getAllPostTokens(this._preprocCache.get(order.file).file, incInfo.postTokens, incInfo.tokenOrder);
             for (let incTokenOrder of incPostTokensInfo[1]) {
-                allTokenOrder.push([incTokenOrder[0], allPostTokens.length + incTokenOrder[1]]);
+                allTokenOrder.push({ file: incTokenOrder.file, tokenNum: allPostTokens.length + incTokenOrder.tokenNum });
             }
             allPostTokens = allPostTokens.concat(incPostTokensInfo[0]);
-            prevIndex = order[1];
+            prevIndex = order.tokenNum;
         }
         if (prevIndex < postTokens.length) {
-            allTokenOrder.push([filePath, allPostTokens.length]);
+            allTokenOrder.push({ file: filePath, tokenNum: allPostTokens.length });
             allPostTokens = allPostTokens.concat(postTokens.slice(prevIndex));
         }
         return [allPostTokens, allTokenOrder];
@@ -954,7 +958,7 @@ export class SystemVerilogPreprocessor {
     public parse(document: TextDocument, includeFilePaths: string[], preprocCache: Map<string, PreprocCacheEntry>, macroInfo: Map<string, MacroInfo>, text?: string): PreprocInfo {
         try {
             let preprocIncInfo: PreprocIncInfo = this._parseInc(document, includeFilePaths, preprocCache, macroInfo, new Set(), text);
-            let postTokensInfo: [PostToken[], [string, number][]] = this._getAllPostTokens(this._filePath, this._preprocIncInfo.postTokens, this._preprocIncInfo.tokenOrder);
+            let postTokensInfo: [PostToken[], TokenOrderEntry[]] = this._getAllPostTokens(this._filePath, this._preprocIncInfo.postTokens, this._preprocIncInfo.tokenOrder);
             return {
                 symbols: preprocIncInfo.symbols,
                 postTokens: postTokensInfo[0],
@@ -997,9 +1001,9 @@ export class SystemVerilogPreprocessor {
             return [
                 preprocIncInfo.symbols == undefined ? undefined : preprocIncInfo.symbols.map(s => s.toJSON()),
                 preprocIncInfo.postTokens,
-                preprocIncInfo.tokenOrder,
+                preprocIncInfo.tokenOrder.map(to => [to.file, to.tokenNum]),
                 preprocIncInfo.macroChanges == undefined ? undefined : preprocIncInfo.macroChanges.map(m => [m.action, m.macroName, SystemVerilogPreprocessor.macroInfoToJSON(m.macroInfo)]),
-                preprocIncInfo.macroChangeOrder,
+                preprocIncInfo.macroChangeOrder.map(mco => [mco.file, mco.index]),
                 preprocIncInfo.includes == undefined ? undefined : [...preprocIncInfo.includes]
             ];
         } catch(error) {
@@ -1013,9 +1017,9 @@ export class SystemVerilogPreprocessor {
             return {
                 symbols: preprocIncInfoJSON[0] == undefined ? undefined : preprocIncInfoJSON[0].map(s => SystemVerilogSymbol.fromJSON(fileUri, s)),
                 postTokens: preprocIncInfoJSON[1],
-                tokenOrder: preprocIncInfoJSON[2],
+                tokenOrder: preprocIncInfoJSON[2].map(to => { return { file: to[0], tokenNum: to[1] }; }),
                 macroChanges: preprocIncInfoJSON[3] == undefined ? undefined : preprocIncInfoJSON[3].map(m => { return {action: m[0], macroName: m[1], macroInfo: SystemVerilogPreprocessor.macroInfoFromJSON(m[2])}; }),
-                macroChangeOrder: preprocIncInfoJSON[4],
+                macroChangeOrder: preprocIncInfoJSON[4].map(mco => { return { file: mco[0], index: mco[1] }; }),
                 includes: preprocIncInfoJSON[5] == undefined ? undefined : new Set(preprocIncInfoJSON[5])
             };
         } catch(error) {

@@ -70,6 +70,7 @@ enum IndexProgressType {
 
 type IndexFileInfo = {symbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo, pkgdeps: string[], rank: number};
 type Containers = {pkgs: string[], modules: string[], interfaces: string[]};
+type UserDefineType = { name: string, def: string, tokens: GrammarToken[] };
 
 export class SystemVerilogIndexer {
     private _rootPath: string | null;
@@ -88,7 +89,7 @@ export class SystemVerilogIndexer {
     private _indexIsSaveable: boolean = false;
     private _completionGrammarEngine: GrammarEngine = new GrammarEngine(svcompletion_grammar, "meta.invalid.systemverilog");
     private _filesCompletionInfo: Map<string, {tokens: GrammarToken[]}> = new Map();
-    private _userDefines: [string, string, GrammarToken[]][] = [];
+    private _userDefines: UserDefineType[] = [];
     private _optionsFileContent: string[] = [];
 
     public NUM_FILES: number = 250;
@@ -115,7 +116,7 @@ export class SystemVerilogIndexer {
     }
 
     setDefines(defines: string[]) {
-        this._userDefines = defines.map(s => s.split("=", 2)).map(s => [s[0], s[1], s[1] == undefined ? [] : SystemVerilogPreprocessor.tokenize(s[1])]);
+        this._userDefines = defines.map(s => s.split("=", 2)).map(s => { return { name: s[0], def: s[1], tokens: s[1] == undefined ? [] : SystemVerilogPreprocessor.tokenize(s[1]) }; });
     }
 
     setLibraries(libraries: string[], excludes: string[]) {
@@ -327,7 +328,7 @@ export class SystemVerilogIndexer {
         });
         forkedIndexBuilder.stdout.on('data', childProcessStdoutRedir);
         forkedIndexBuilder.stderr.on('data', childProcessStderrRedir);
-        forkedIndexBuilder.send(['config', this._srcFiles, this._userDefines.map(d => [d[0], d[2]])]);
+        forkedIndexBuilder.send(['config', this._srcFiles, this._userDefines.map(d => [d.name, d.tokens])]);
         forkedIndexBuilder.send(['index', this._srcFiles[offset]]);
     }
 
@@ -482,7 +483,7 @@ export class SystemVerilogIndexer {
         let fileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo;
         let pkgdeps: string[];
         let parser: SystemVerilogParser = new SystemVerilogParser();
-        let userDefinesMacroInfo = new Map(this._userDefines.map(d => [d[0], { args: undefined, default: undefined, definition: d[2], symbol: undefined, file: "" }]));
+        let userDefinesMacroInfo = new Map(this._userDefines.map(d => [d.name, { args: undefined, default: undefined, definition: d.tokens, symbol: undefined, file: "" }]));
         [fileSymbolsInfo, pkgdeps] = parser.parse(document, this._srcFiles, this._preprocCache, userDefinesMacroInfo, "full", undefined);
 
         let rank: number = this._indexedFilesInfo.has(file) ? this._indexedFilesInfo.get(file).rank : 0;
@@ -1501,11 +1502,11 @@ export class SystemVerilogIndexer {
     }
 
     public findUserDefine(defText: string): number {
-        return this._userDefines.findIndex(d => d[0] == defText);
+        return this._userDefines.findIndex(d => d.name == defText);
     }
 
     public getUserDefine(defNum: number): string {
-        return this._userDefines[defNum].slice(0, 2).join('=');
+        return [this._userDefines[defNum].name, this._userDefines[defNum].def].join('=');
     }
 
     public getIncFilePathAndSymbol(filePath: string): [string, SystemVerilogSymbol] {
