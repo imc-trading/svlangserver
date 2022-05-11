@@ -76,6 +76,7 @@ export class SystemVerilogIndexer {
     private _rootPath: string | null;
     private _clientDir: string | null;
     private _srcFiles: string[];
+    private _mustSrcFiles: Set<string> = new Set();
     private _libFiles: string[] = [];
     private _preprocCache: Map<string, PreprocCacheEntry> = new Map();
     private _indexedFilesInfo: Map<string, IndexFileInfo> = new Map();
@@ -119,13 +120,13 @@ export class SystemVerilogIndexer {
         this._userDefines = defines.map(s => s.split("=", 2)).map(s => { return { name: s[0], def: s[1], tokens: s[1] == undefined ? [] : SystemVerilogPreprocessor.tokenize(s[1]) }; });
     }
 
-    private _indexGlob(includes: string[], excludes: string[], func) {
+    private _indexGlob(includes: string[], excludes: string[], globOptions, func) {
         const pattern = includes.length == 1 ? includes[0] : '{' + includes.join(",") + '}';
-        glob(pattern, {cwd: this._rootPath, ignore: excludes, follow: true, realpath: true}, func);
+        return glob(pattern, !!globOptions ? globOptions : {cwd: this._rootPath, ignore: excludes, follow: true, realpath: true}, func);
     }
 
     setLibraries(libraries: string[], excludes: string[]) {
-        this._indexGlob(libraries, excludes, (err, files) => {
+        this._indexGlob(libraries, excludes, undefined, (err, files) => {
             if (err) {
                 ConnectionLogger.error(err);
             }
@@ -159,7 +160,36 @@ export class SystemVerilogIndexer {
         return Promise.resolve();
     }
 
-    index(includes: string[], excludes: string[]) {
+    index(includes: string[], mustIncludes: string[], excludes: string[]) {
+        let _filesGlob = (callBack) => {
+            let _incFiles: string[] = undefined;
+            let _mustFiles: string[] = undefined;
+
+            let _incGlob = this._indexGlob(includes, excludes, undefined, (err, files) => {
+                if (err) {
+                    callBack(err, [], []);
+                    return;
+                }
+
+                _incFiles = files;
+                if (_mustFiles != undefined) {
+                    callBack(err, _incFiles, _mustFiles);
+                }
+            });
+
+            this._indexGlob(mustIncludes, excludes, _incGlob.options, (err, files) => {
+                if (err) {
+                    callBack(err, [], []);
+                    return;
+                }
+
+                _mustFiles = files;
+                if (_incFiles != undefined) {
+                    callBack(err, _incFiles, _mustFiles);
+                }
+            });
+        };
+
         let _index = (srcFiles: string[]) => {
             this._indexProgress = IndexProgressType.Ongoing;
             this._srcFiles = srcFiles;
@@ -173,25 +203,34 @@ export class SystemVerilogIndexer {
             if (this._indexProgress == IndexProgressType.Starting) {
                 this._indexProgress = IndexProgressType.Halting;
                 this._waitForHalt().then(() => {
-                    this.index(includes, excludes);
+                    this.index(includes, mustIncludes, excludes);
                 }).catch((err) => {
                     ConnectionLogger.error(err);
                 });
                 return;
             }
             else if (this._indexProgress == IndexProgressType.Ongoing) {
-                this._indexGlob(includes, excludes, (err, files) => {
+                _filesGlob((err, files, mustFiles) => {
                     if (err) {
                         ConnectionLogger.error(err);
+                        return;
                     }
-                    else if (files.length > 0) {
-                        if (!isStringListEqual(files, this._srcFiles)) {
+
+                    let newMustSrcFiles: Set<string> = new Set(mustFiles);
+                    let allFiles: string[] = files.concat(mustFiles);
+                    if (allFiles.length > 0) {
+                        if (!isStringListEqual(allFiles, this._srcFiles)) {
                             this._indexProgress = IndexProgressType.Halting;
                             this._waitForHalt().then(() => {
-                                _index(files);
+                                this._mustSrcFiles = newMustSrcFiles;
+                                _index(allFiles);
                             }).catch((err) => {
                                 ConnectionLogger.error(err);
                             });
+                        }
+                        else if ([...newMustSrcFiles].sort().join() != [...this._mustSrcFiles].sort().join()) {
+                            this._mustSrcFiles = newMustSrcFiles;
+                            this._generateVerilatorOptionsFile();
                         }
                     }
                     else {
@@ -202,7 +241,7 @@ export class SystemVerilogIndexer {
             }
 
             this._indexProgress = IndexProgressType.Starting;
-            this._indexGlob(includes, excludes, (err, files) => {
+            _filesGlob((err, files, mustFiles) => {
                 if (this._indexProgress == IndexProgressType.Halting) {
                     this._indexProgress = IndexProgressType.Halted;
                     return;
@@ -211,10 +250,15 @@ export class SystemVerilogIndexer {
                 if (err) {
                     this._indexProgress = IndexProgressType.Done;
                     ConnectionLogger.error(err);
+                    this._mustSrcFiles = new Set();
                     this._srcFiles = [];
+                    return;
                 }
-                else if (files.length > 0) {
-                    _index(files);
+
+                let allFiles: string[] = files.concat(mustFiles);
+                if (allFiles.length > 0) {
+                    this._mustSrcFiles = new Set(mustFiles);
+                    _index(allFiles);
                 }
                 else {
                     this._indexProgress = IndexProgressType.Done;
@@ -420,7 +464,12 @@ export class SystemVerilogIndexer {
     private _generateVerilatorOptionsFile() {
         this._optionsFileContent = [];
         for (let [file, rank] of [...[...this._indexedFilesInfo.entries()].filter(a => a[1].pkgdeps != null)].sort((a, b) => a[1].rank <= b[1].rank ? 1 : -1)) {
-            this._optionsFileContent.push('-v ' + file);
+            if (this._mustSrcFiles.has(file)) {
+                this._optionsFileContent.push(file);
+            }
+            else {
+                this._optionsFileContent.push('-v ' + file);
+            }
         }
         for (let libfile of [...new Set(this._libFiles.values())]) {
             this._optionsFileContent.push('-v ' + libfile);
@@ -440,6 +489,10 @@ export class SystemVerilogIndexer {
 
     public fileHasPkg(file: string): boolean {
         return this._indexedFilesInfo.has(file) && (this._indexedFilesInfo.get(file).pkgdeps != null);
+    }
+
+    public isMustSrcFile(file: string): boolean {
+        return this._mustSrcFiles.has(file);
     }
 
     public processDocumentChanges(document: TextDocument) {

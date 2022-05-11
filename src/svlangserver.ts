@@ -217,11 +217,12 @@ function updateSettings(change, updateIfNotInitialized: Boolean = false) {
     let definesChanged: Boolean = forceUpdate || !isStringListEqual(oldSettings.get("systemverilog.defines"), settings.get("systemverilog.defines"))
     if (forceUpdate || definesChanged ||
         !isStringListEqual(oldSettings.get("systemverilog.includeIndexing"), settings.get("systemverilog.includeIndexing")) ||
+        !isStringListEqual(oldSettings.get("systemverilog.mustIncludeIndexing"), settings.get("systemverilog.mustIncludeIndexing")) ||
         !isStringListEqual(oldSettings.get("systemverilog.excludeIndexing"), settings.get("systemverilog.excludeIndexing"))) {
         if (definesChanged) {
             svindexer.setDefines(settings.get("systemverilog.defines"));
         }
-        svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.excludeIndexing"));
+        svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.mustIncludeIndexing"), settings.get("systemverilog.excludeIndexing"));
     }
 
     if (forceUpdate ||
@@ -385,7 +386,7 @@ connection.onSignatureHelp((textDocumentPosition: TextDocumentPositionParams): S
 connection.onExecuteCommand((commandParams) => {
     try {
         if (commandParams.command == BuildIndexCommand) {
-            svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.excludeIndexing"));
+            svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.mustIncludeIndexing"), settings.get("systemverilog.excludeIndexing"));
         }
         else if (commandParams.command == ReportHierarchyCommand) {
             if ((commandParams.arguments == undefined) || (commandParams.arguments.length != 1)) {

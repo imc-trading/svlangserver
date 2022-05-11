@@ -216,7 +216,7 @@ export class VerilogDiagnostics {
 
             let definesArg: string = this._defines.length > 0 ? this._defines.map(d => ` +define+${d}`).join('') : "";
             let optionsFileArg: string = optionsFile ? ' -f ' + optionsFile : "";
-            let actFileArg: string = " " + actFile;
+            let actFileArg: string = this._indexer.isMustSrcFile(file) ? "" : " " + actFile;
             let command: string = this._command + definesArg + optionsFileArg + actFileArg;
             //ConnectionLogger.log(`DEBUG: verilator command ${command}`);
             this._childProcMngr.run(file, command, (status, error, stdout, stderr) => {

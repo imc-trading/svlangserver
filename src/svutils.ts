@@ -1,5 +1,6 @@
 export let default_settings: Map<string, any> = new Map<string, any>([
     ["systemverilog.includeIndexing", ["**/*.sv"]],
+    ["systemverilog.mustIncludeIndexing", []],
     ["systemverilog.libraryIndexing", []],
     ["systemverilog.excludeIndexing", ["**/test/**"]],
     ["systemverilog.linter", 'verilator'],
