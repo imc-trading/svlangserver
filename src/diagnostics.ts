@@ -202,7 +202,7 @@ export class VerilogDiagnostics {
 
                 if (this._indexer.fileHasPkg(file)) {
                     let vcFileContent: string = this._indexer.getOptionsFileContent()
-                                                                .map(line => { return (line.endsWith(file)) ? actFile : line; })
+                                                                .map(line => { return (line.endsWith(file)) ? line.slice(0, line.length - file.length) + actFile : line; })
                                                                 .join('\n');
                     vcTmpFileNum = tmpFileManager.getFreeTmpFileNum("vcfiles");
                     let tmpVcFile: string = tmpFileManager.getTmpFilePath("vcfiles", `lint${vcTmpFileNum}.vc`);
