@@ -233,6 +233,8 @@ function updateSettings(change, updateIfNotInitialized: Boolean = false) {
     diagnostics.setLinter(settings.get("systemverilog.linter"));
     diagnostics.setCommand(settings.get("systemverilog.launchConfiguration"));
     diagnostics.setDefines(settings.get("systemverilog.defines"));
+    diagnostics.setWhitelistedMessages(settings.get("systemverilog.linterWhitelist"));
+
     svformatter.setCommand(settings.get("systemverilog.formatCommand"));
     settingsInitialized = true;
 }

@@ -7,6 +7,10 @@ export let default_settings: Map<string, any> = new Map<string, any>([
     ["systemverilog.launchConfiguration", 'verilator -sv --lint-only --Wall'],
     ["systemverilog.defines", []],
     ["systemverilog.lintOnUnsaved", true],
+    ["systemverilog.linterWhitelist", [
+        /Unsupported: Interfaced port on top level module/i,
+        /Parent instance's interface is not found/i
+    ]],
     ["systemverilog.formatCommand", "verible-verilog-format"],
     ["systemverilog.disableCompletionProvider", false],
     ["systemverilog.disableHoverProvider", false],
