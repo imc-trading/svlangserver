@@ -189,7 +189,8 @@ function getSettings() : Promise<Object> {
     }
 }
 
-function updateSettings(change, forceUpdate: Boolean = false) {
+let settingsInitialized: Boolean = false;
+function updateSettings(change, updateIfNotInitialized: Boolean = false) {
     let oldSettings: Map<string, any> = new Map<string, any>();
     for (let [prop, val] of settings.entries()) {
         oldSettings.set(prop, val);
@@ -212,22 +213,27 @@ function updateSettings(change, forceUpdate: Boolean = false) {
         ConnectionLogger.log(`INFO: settings[${prop}] = ${settings.get(prop)}`);
     }
 
+    let forceUpdate: Boolean = !settingsInitialized && updateIfNotInitialized;
     let definesChanged: Boolean = forceUpdate || !isStringListEqual(oldSettings.get("systemverilog.defines"), settings.get("systemverilog.defines"))
     if (forceUpdate || definesChanged ||
         !isStringListEqual(oldSettings.get("systemverilog.includeIndexing"), settings.get("systemverilog.includeIndexing")) ||
-        !isStringListEqual(oldSettings.get("systemverilog.libraryIndexing"), settings.get("systemverilog.libraryIndexing")) ||
         !isStringListEqual(oldSettings.get("systemverilog.excludeIndexing"), settings.get("systemverilog.excludeIndexing"))) {
         if (definesChanged) {
             svindexer.setDefines(settings.get("systemverilog.defines"));
         }
-        svindexer.setLibraries(settings.get("systemverilog.libraryIndexing"), settings.get("systemverilog.excludeIndexing"));
         svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.excludeIndexing"));
+    }
+
+    if (forceUpdate ||
+        !isStringListEqual(oldSettings.get("systemverilog.libraryIndexing"), settings.get("systemverilog.libraryIndexing"))) {
+        svindexer.setLibraries(settings.get("systemverilog.libraryIndexing"), settings.get("systemverilog.excludeIndexing"));
     }
 
     diagnostics.setLinter(settings.get("systemverilog.linter"));
     diagnostics.setCommand(settings.get("systemverilog.launchConfiguration"));
     diagnostics.setDefines(settings.get("systemverilog.defines"));
     svformatter.setCommand(settings.get("systemverilog.formatCommand"));
+    settingsInitialized = true;
 }
 
 connection.onInitialized(() => {
@@ -379,7 +385,6 @@ connection.onSignatureHelp((textDocumentPosition: TextDocumentPositionParams): S
 connection.onExecuteCommand((commandParams) => {
     try {
         if (commandParams.command == BuildIndexCommand) {
-            svindexer.setLibraries(settings.get("systemverilog.libraryIndexing"), settings.get("systemverilog.excludeIndexing"));
             svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.excludeIndexing"));
         }
         else if (commandParams.command == ReportHierarchyCommand) {
