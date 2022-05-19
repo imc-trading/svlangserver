@@ -23,6 +23,7 @@ The code has been tested to work with below tool versions
 - Sublime Text Build 4126
 - emacs 29.0.50
   * lsp-mode lsp-mode-20220328.1429
+- Neovim 0.7.0
 - Verilator 4.110
 - Icarus Verilog Compiler 10.2
 - Verible v0.0-1114-ged89c1b
@@ -42,6 +43,14 @@ The code has been tested to work with below tool versions
   * Install lsp-mode
   * `npm install -g @imc-trading/svlangserver`
   * Update .emacs/init.el
+- For neovim
+  * Install [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig)
+  * `npm install -g @imc-trading/svlangserver`
+  * Add following setting in your init.lua
+  ```lua
+  require'lspconfig'.svlangserver.setup{}
+  ```
+  * Update .nvim/lspconfig.json
 
 To get the snippets, git clone this repo and copy the snippets directory wherever applicable
 
@@ -165,6 +174,25 @@ NOTE: This has been tested with npm version 6.14.13 and node version 14.17.1
                    (lsp-clients-svlangserver-includeIndexing . ("src/**/*.{sv,svh}"))
                    (lsp-clients-svlangserver-excludeIndexing . ("src/test/**/*.{sv,svh}"))))
     ```
+- Example neovim settings file
+    ```json
+    {
+        "languageserver": {
+            "svlangserver": {
+                "command": "svlangserver",
+                "filetypes": ["systemverilog"],
+                "settings": {
+                    "systemverilog.includeIndexing": ["**/*.{sv,svh}"],
+                    "systemverilog.excludeIndexing": ["test/**/*.sv*"],
+                    "systemverilog.defines" : [],
+                    "systemverilog.launchConfiguration": "/tools/verilator -sv -Wall --lint-only",
+                    "systemverilog.formatCommand": "/tools/verible-verilog-format"
+                }
+            }
+        }
+    }
+    ```
+    For project specific settings this file should be at `<WORKSPACE PATH>/.nvim/lspconfig.json`
 
 ## Commands
 * `systemverilog.build_index`: Instructs language server to rerun indexing
@@ -212,6 +240,10 @@ NOTE: This has been tested with npm version 6.14.13 and node version 14.17.1
   * `lsp-clients-svlangserver-build-index` command should rerun the indexing.
   * `lsp-clients-svlangserver-report-hierarchy` command should do the job. If invoked with an active slection, the module name is pre-filled with the selection.
 
+### Neovim usage
+  * `:SvlangserverBuildIndex` command should rerun the indexing.
+  * `:SvlangserverReportHierarchy` command will generate hierarchy file of the word under the cursor in normal mode.
+
 ## Troubleshooting
 - Editor is not able to find language server binary.
     * Make sure the binary is in the system path as exposed to the editor. If the binary is installed in custom directory, expose that path to your editor
@@ -225,7 +257,7 @@ NOTE: This has been tested with npm version 6.14.13 and node version 14.17.1
     * for vscode: Check the SVLangServer output channel
     * for sublime: Open the command palette in the tools menu and select `LSP: Toggle Log Panel`
     * for emacs: Check the `*lsp-log*` buffer
-
+    * for neovim: Add `vim.lsp.set_log_level("info")` in your init.lua then check ~/.cache/nvim/lsp.log
 
 ## Known Issues
 - Language server doesn't understand most verification specific concepts (e.g. classes).
