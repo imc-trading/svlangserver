@@ -101,19 +101,20 @@ connection.onInitialize((params: InitializeParams) => {
 
     try {
         svindexer.setRoot(uriToPath(params.rootUri));
-        if (clientName.startsWith("vscode")) {
+        if ((clientName.toLowerCase().startsWith("vscode")) ||
+            (clientName.toLowerCase().startsWith("visual studio code"))) {
             svindexer.setClientDir(".vscode");
         }
-        else if (clientName.startsWith("coc.nvim")) {
+        else if (clientName.toLowerCase().startsWith("coc.nvim")) {
             svindexer.setClientDir(".vim");
         }
-        else if (clientName.startsWith("Sublime")) {
+        else if (clientName.toLowerCase().startsWith("sublime")) {
             svindexer.setClientDir(".sublime");
         }
-        else if (clientName.startsWith("emacs")) {
+        else if (clientName.toLowerCase().startsWith("emacs")) {
             svindexer.setClientDir(".emacs");
         }
-        else if (clientName.startsWith("Neovim")) {
+        else if (clientName.toLowerCase().startsWith("neovim")) {
             svindexer.setClientDir(".nvim");
         }
         else {
