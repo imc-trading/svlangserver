@@ -8,7 +8,7 @@
         "language",
         "server"
     ],
-    "version": "0.4.0",
+    "version": "0.4.1",
     "author": "Kanad Kanhere",
     "publisher": "IMCTradingBV",
     "license": "MIT",
@@ -109,13 +109,25 @@
                     "systemverilog.includeIndexing": {
                         "type": "array",
                         "default": [
-                            "**/*.{sv,svh,v,vh}"
+                            "**/*.sv"
                         ],
                         "description": "Files included for indexing (glob pattern)."
                     },
-                    "systemverilog.excludeIndexing": {
+                    "systemverilog.mustIncludeIndexing": {
                         "type": "array",
                         "default": [],
+                        "description": "Files included for indexing and are always to be linted (glob pattern)."
+                    },
+                    "systemverilog.libraryIndexing": {
+                        "type": "array",
+                        "default": [],
+                        "description": "Files not included for indexing but needed for linting (glob pattern)."
+                    },
+                    "systemverilog.excludeIndexing": {
+                        "type": "array",
+                        "default": [
+                            "**/test/**"
+                        ],
                         "description": "Files excluded for indexing (glob pattern)."
                     },
                     "systemverilog.linter": {
@@ -145,6 +157,14 @@
                         "type": "boolean",
                         "default": true,
                         "description": "Enable linting on unsaved files"
+                    },
+                    "systemverilog.linterWhitelist": {
+                        "type": "array",
+                        "default": [
+                            "/Unsupported: Interfaced port on top level module/i",
+                            "/Parent instance's interface is not found/i"
+                        ],
+                        "description": "List of linting errors that need to be whitelisted (javascript regex)"
                     },
                     "systemverilog.formatCommand": {
                         "type": "string",

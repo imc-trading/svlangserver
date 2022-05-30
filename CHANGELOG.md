@@ -1,6 +1,20 @@
 # Changelog
 All notable changes to this repository are documented below.
 
+## [0.4.1] = 2022.05.30
+- Support for Neovim client with nvim-lspconfig
+- Updated settings for faster indexing
+  * Updated libraryIndexing setting to empty by default
+  * Added mustIncludeIndexing setting to glob for files that must be always linted
+  * Added linterWhitelist setting for whitelisting linter errors
+- Bug fixes
+  * for [issue #19](https://github.com/imc-trading/svlangserver/issues/19)
+  * Updated documentation for [issue #21](https://github.com/imc-trading/svlangserver/issues/21)
+  * for package linting
+  * for jump to definition
+  * Fix client directory name for newer VSCode
+  * Misc fixes for linter file generation
+
 ## [0.4.0] - 2022.03.30
 - Support for Icarus as linting alternative
 - Added command for reporting hierarchy

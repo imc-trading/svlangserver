@@ -104,6 +104,26 @@ NOTE: This has been tested with npm version 6.14.13 and node version 14.17.1
     }
     ```
     For project specific settings this file should be at `<WORKSPACE PATH>/.vim/coc-settings.json`
+- Example coc.nvim settings file (for windows)
+    ```json
+    {
+        "languageserver": {
+            "svlangserver": {
+                "module": "/usr/lib/node_modules/@imc-trading/svlangserver/bin/main.js",
+                "args": ["--node-ipc"],
+                "filetypes": ["systemverilog"],
+                "settings": {
+                    "systemverilog.includeIndexing": ["**/*.{sv,svh}"],
+                    "systemverilog.excludeIndexing": ["test/**/*.sv*"],
+                    "systemverilog.defines" : [],
+                    "systemverilog.launchConfiguration": "/tools/verilator -sv -Wall --lint-only",
+                    "systemverilog.formatCommand": "/tools/verible-verilog-format"
+                }
+            }
+        }
+    }
+    ```
+    For project specific settings this file should be at `<WORKSPACE PATH>\.vim\coc-settings.json`
 - Example vscode settings file
     ```json
     {
@@ -270,6 +290,11 @@ Although most of the code is written from scratch, this [VSCode-SystemVerilog ex
 
 ## Release Notes
 See the [changelog](CHANGELOG.md) for more details
+
+### 0.4.1
+- Support for Neovim client with nvim-lspconfig
+- Updated settings for faster indexing
+- Bug fixes
 
 ### 0.4.0
 - Icarus as linting alternative
