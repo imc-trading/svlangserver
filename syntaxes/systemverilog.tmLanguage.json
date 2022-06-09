@@ -89,7 +89,7 @@
   ],
   "repository": {
     "function-task": {
-      "begin": "[ \\t\\n]*(?:\\b(virtual)[ \\t\\n]+)?(?:\\b(function|task)\\b)(?:[ \\t\\n]+\\b(static|automatic)\\b)?",
+      "begin": "(?:\\b(virtual)[ \\t\\n]+)?(?:\\b(function|task)\\b)(?:[ \\t\\n]+\\b(static|automatic)\\b)?",
       "beginCaptures": {
         "1": {
           "name": "storage.modifier.systemverilog"
@@ -1167,18 +1167,10 @@
       },
       "patterns": [
         {
-          "match": "\\$",
-          "name": "constant.language.systemverilog"
+          "include": "#identifiers"
         },
         {
-          "include": "#constants"
-        },
-        {
-          "include": "#operators"
-        },
-        {
-          "match": "[a-zA-Z0-9_$]+",
-          "name": "meta.index.systemverilog"
+          "include": "#base-grammar"
         }
       ],
       "name": "meta.brackets.select.systemverilog"
