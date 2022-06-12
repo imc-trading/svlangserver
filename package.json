@@ -249,24 +249,25 @@
     },
     "dependencies": {
         "glob": "^7.1.6",
+        "tmp": "^0.2.1",
         "vscode-languageclient": "^7.0.0",
         "vscode-languageserver": "^7.0.0",
         "vscode-languageserver-protocol": "^3.16.0",
         "vscode-languageserver-textdocument": "^1.0.1",
         "vscode-uri": "^2.1.2",
-        "tmp": "^0.2.1"
+        "web-tree-sitter": "^0.20.0"
     },
     "devDependencies": {
         "@types/node": "^12.12.0",
         "@types/vscode": "^1.52.0",
         "ts-loader": "^9.1.2",
         "typescript": "^3.7.5",
-        "webpack": "^5.37.0",
+        "webpack": "^5.85.0",
         "webpack-cli": "^4.7.0"
     },
     "scripts": {
         "vscode:prepublish": "npm run prepare && npm run webpack",
-        "webpack": "webpack --mode production --config ./webpack.config.js",
+        "webpack": "webpack --mode production --config ./webpack.config.js && cp node_modules/web-tree-sitter/tree-sitter.wasm dist/.",
         "build": "tsc -p .",
         "prepare": "tsc -p ./src",
         "watch": "tsc --watch -p ."
@@ -274,6 +275,7 @@
     "files": [
         "/lib/*.js",
         "/lib/*.d.ts",
-        "/bin/*.js"
+        "/bin/*.js",
+        "/parsers/*.wasm"
     ]
 }

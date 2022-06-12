@@ -12,6 +12,10 @@ import {
 } from './svpreprocessor';
 
 import {
+    init as svParsersInit
+} from './svparsers_manager';
+
+import {
     SystemVerilogParser
 } from './svparser';
 
@@ -21,7 +25,7 @@ import {
     pathToUri
 } from './genutils';
 
-let _parser: SystemVerilogParser = new SystemVerilogParser();
+svParsersInit();
 
 let _preprocCache: Map<string, PreprocCacheEntry> = new Map();
 let _includeFilePaths: string[] = [];
@@ -53,6 +57,7 @@ process.on('message', (args) => {
                         let document: TextDocument = TextDocument.create(pathToUri(file), "SystemVerilog", 0, data.toString());
                         let fileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo;
                         let pkgdeps: string[];
+                        let _parser: SystemVerilogParser = new SystemVerilogParser();
                         [fileSymbolsInfo, pkgdeps] = _parser.parse(document, _includeFilePaths, _preprocCache, _userDefinesMacroInfo, "full");
                         //DBG let symbols: SystemVerilogSymbol[] = SystemVerilogParser.fileAllSymbols(fileSymbolsInfo, false);
                         //DBG ConnectionLogger.log(`DEBUG: Sending ${symbols.length} symbols and ${pkgdeps.length} pkgdeps for ${file}`);

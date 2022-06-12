@@ -70,6 +70,10 @@ import {
     default_settings
 } from './svutils';
 
+import {
+    init as svParsersInit
+} from './svparsers_manager';
+
 const BuildIndexCommand = "systemverilog.build_index"
 const ReportHierarchyCommand = "systemverilog.report_hierarchy"
 
@@ -84,7 +88,7 @@ let clientName: string;
 let hasConfigurationCapability: Boolean = false;
 let hasShowWindowCapability: Boolean = false;
 
-// Create a simple text document manager.
+svParsersInit();
 let documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 let svindexer: SystemVerilogIndexer = new SystemVerilogIndexer();
 let svdefprovider: SystemVerilogDefinitionProvider = new SystemVerilogDefinitionProvider(svindexer);

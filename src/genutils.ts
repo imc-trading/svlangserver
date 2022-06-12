@@ -169,7 +169,7 @@ export class ConnectionLogger {
 
 export function childProcessStdoutRedir(data) {
     try {
-        let message: string = data.toString();
+        let message: string = data.toString().trimEnd();
         if (message.startsWith("WARNING: ")) {
             ConnectionLogger.warn(message, false);
         }
@@ -184,7 +184,7 @@ export function childProcessStdoutRedir(data) {
 
 export function childProcessStderrRedir(data) {
     try {
-        let message: string = data.toString();
+        let message: string = data.toString().trimEnd();
         ConnectionLogger.error(message, false);
     } catch (error) {
         ConnectionLogger.error(error, false);

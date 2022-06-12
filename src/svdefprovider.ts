@@ -24,6 +24,16 @@ import {
 } from './grammar_engine';
 
 import {
+    svIdentifiersParser
+} from './svparsers_manager';
+
+import {
+    SyntaxNode,
+    Tree,
+    TreeCursor
+} from 'web-tree-sitter';
+
+import {
     ConnectionLogger,
     pathToUri,
     uriToPath
@@ -125,6 +135,106 @@ export class SystemVerilogDefinitionProvider {
         }
 
         return tokens.slice(startTokenNum + 1, endTokenNum).map(t => t.text).join('');
+    }
+
+    private _debugSvIdentifiers(document: TextDocument) {
+        if (svIdentifiersParser == null) {
+            return;
+        }
+
+        const svIdentifiersTree: Tree = svIdentifiersParser.parse(document.getText());
+
+        const printIdentifiers = (treeCursor: TreeCursor) => {
+            const currentNode: SyntaxNode = treeCursor.currentNode();
+            if ((currentNode.type == "macro_identifier") ||
+                (currentNode.type == "system_identifier") ||
+                (currentNode.type == "escaped_or_simple_identifier")) {
+                let idType: string = "regular";
+                if (currentNode.type == "macro_identifier") {
+                    idType = "macro";
+                }
+                else if (currentNode.type == "system_identifier") {
+                    idType = "system";
+                }
+                if (currentNode.walk().gotoFirstChild()) {
+                    ConnectionLogger.log(`DEBUG: ${idType}-id weird '${currentNode.text}'`);
+                }
+                else {
+                    ConnectionLogger.log(`DEBUG: Found ${idType}-id '${currentNode.text}'`);
+                }
+            }
+            else if ((currentNode.type == "array_identifier") ||
+                     (currentNode.type == "parametrized_identifier")) {
+                let idType: string = "parametrized";
+                if (currentNode.type == "array_identifier") {
+                    idType = "array";
+                }
+                let idTreeCursor: TreeCursor = currentNode.walk();
+                if (idTreeCursor.gotoFirstChild()) {
+                    let numSiblings: number = 0;
+                    while (idTreeCursor.gotoNextSibling()) {
+                        numSiblings++;
+                    }
+
+                    if (((currentNode.type == "array_identifier") && (numSiblings < 1)) ||
+                        ((currentNode.type == "parametrized_identifier") && (numSiblings != 1))) {
+                        ConnectionLogger.log(`DEBUG: ${idType}-id weird '${currentNode.text}'`);
+                    }
+                    else {
+                        idTreeCursor = currentNode.walk();
+                        idTreeCursor.gotoFirstChild();
+                        ConnectionLogger.log(`DEBUG: Found ${idType}-id '${idTreeCursor.currentNode().text}'`);
+                        while (idTreeCursor.gotoNextSibling()) {
+                            printIdentifiers(idTreeCursor.currentNode().walk());
+                        }
+                    }
+                }
+                else {
+                    ConnectionLogger.log(`DEBUG: ${idType}-id weird '${currentNode.text}'`);
+                }
+            }
+            else if ((currentNode.type == "scoped_identifier") ||
+                     (currentNode.type == "hierarchical_identifier") ||
+                     (currentNode.type == "scoped_and_hierarchical_identifier")) {
+                let idType: string = "scoped-hierarchical";
+                if (currentNode.type == "scoped_identifier") {
+                    idType = "scoped";
+                }
+                else if (currentNode.type == "hierarchical_identifier") {
+                    idType = "hierarchical";
+                }
+                let idTreeCursor: TreeCursor = currentNode.walk();
+                if (idTreeCursor.gotoFirstChild()) {
+                    let compIdNodes: SyntaxNode[] = [];
+                    let nonCompIdNodes: SyntaxNode[] = [];
+                    do {
+                        if (idTreeCursor.currentNode().type == "escaped_or_simple_identifier") {
+                            compIdNodes.push(idTreeCursor.currentNode());
+                        }
+                        else {
+                            nonCompIdNodes.push(idTreeCursor.currentNode());
+                        }
+                    } while(idTreeCursor.gotoNextSibling());
+                    if (compIdNodes.length > 0) {
+                        ConnectionLogger.log(`DEBUG: Found ${idType}-id '(${compIdNodes.map(n => n.text).join(')(')})'`);
+                    }
+                    else {
+                        ConnectionLogger.log(`DEBUG: ${idType}-id weird '${currentNode.text}'`);
+                    }
+                }
+                else {
+                    ConnectionLogger.log(`DEBUG: ${idType}-id weird '${currentNode.text}'`);
+                }
+            }
+            else if (treeCursor.gotoFirstChild()) {
+                do {
+                    printIdentifiers(treeCursor);
+                } while(treeCursor.gotoNextSibling());
+                treeCursor.gotoParent();
+            }
+        };
+
+        printIdentifiers(svIdentifiersTree.walk());
     }
 
     private _getDefinition(document: TextDocument, position: Position, includeUserDefines?: Boolean, checkPrevPosition: Boolean = false): [string, SystemVerilogSymbol|number] {

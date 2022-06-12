@@ -830,6 +830,7 @@ export class SystemVerilogPreprocessor {
 
     private _parseInc(document: TextDocument, includeFilePaths: string[], preprocCache: Map<string, PreprocCacheEntry>, macroInfo: Map<string, MacroInfo>, fileList: Set<string>, text?: string): PreprocIncInfo {
         let preText: string = text || document.getText();
+        preText = preText.replace(/\s+;/g, ';');//TBD: remove this pre-processing
         this._document = document;
         this._filePath = uriToPath(document.uri);
         this._fileList = fileList;

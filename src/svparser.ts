@@ -22,6 +22,7 @@ import {
 
 import {
     MacroInfo,
+    PostToken,
     PreprocCacheEntry,
     PreprocIncInfo,
     PreprocInfo,
@@ -29,7 +30,21 @@ import {
     TokenOrderEntry
 } from "./svpreprocessor";
 
+import {
+    svIndexParser,
+    svIndexParserInitSubscribers,
+    visitAllNodes,
+    visitLeafNodes,
+} from './svparsers_manager';
+
+import {
+    SyntaxNode,
+    Tree,
+    TreeCursor
+} from 'web-tree-sitter';
+
 const DEBUG_MODE: number = 0;
+const fs = require('fs');
 
 class ParseToken {
     text: string;
@@ -186,9 +201,8 @@ class ContainerStack {
         return this._stack.containersInfo.map(e => e.symbol.name);
     }
 
-    pushImportItem(importItemToken: ParseToken) {
-        let importParts: string[] = importItemToken.text.split('::');
-        let importHierPath: string = [importParts[0], ...this.toStringList()].join(' ');
+    pushImportItemParts(pkgName: string, importName: string) {
+        let importHierPath: string = [pkgName, ...this.toStringList()].join(' ');
         if (!this._importMap.has(importHierPath)) {
             this._importMap.set(importHierPath, { allIncluded: false, index: undefined });
         }
@@ -215,34 +229,38 @@ class ContainerStack {
 
         if (importInfo.index == undefined) {
             importInfo.index = importsInfo.length;
-            importsInfo.push({ pkg: importParts[0], symbolsText: [] });
+            importsInfo.push({ pkg: pkgName, symbolsText: [] });
         }
 
-        if (importParts[1] == "*") {
+        if (importName == "*") {
             importInfo.allIncluded = true;
             importsInfo[importInfo.index].symbolsText = ["*"];
         }
         else {
-            importsInfo[importInfo.index].symbolsText.push(importParts[1]);
+            importsInfo[importInfo.index].symbolsText.push(importName);
         }
     }
 
-    pushExportItem(exportItemToken: ParseToken) {
-        let exportParts: string[] = exportItemToken.text.split('::');
-        let exportHierPath: string = [exportParts[0], ...this.toStringList()].join(' ');
+    pushImportItem(importItemToken: ParseToken) {
+        let importParts: string[] = importItemToken.text.split('::');
+        this.pushImportItemParts(importParts[0], importParts[1]);
+    }
+
+    pushExportItemParts(pkgName: string, exportName: string) {
+        let exportHierPath: string = [pkgName, ...this.toStringList()].join(' ');
         if (!this._exportMap.has(exportHierPath)) {
             this._exportMap.set(exportHierPath, { allIncluded: false, index: undefined });
         }
-        else if (exportParts[0] == "*") {
+        else if (pkgName == "*") {
             return;
         }
 
-        if (exportParts[0] == "*") {
+        if (pkgName == "*") {
             if (this._stack.containersInfo.length <= 0) {
-                this._stack.fileInfo.exportsInfo = [{pkg: exportParts[0], symbolsText: ["*"] }];
+                this._stack.fileInfo.exportsInfo = [{pkg: pkgName, symbolsText: ["*"] }];
             }
             else {
-                this._stack.containersInfo[this._stack.containersInfo.length - 1].info.exportsInfo = [{pkg: exportParts[0], symbolsText: ["*"] }];
+                this._stack.containersInfo[this._stack.containersInfo.length - 1].info.exportsInfo = [{pkg: pkgName, symbolsText: ["*"] }];
             }
             return;
         }
@@ -269,18 +287,25 @@ class ContainerStack {
 
         if (exportInfo.index == undefined) {
             exportInfo.index = exportsInfo.length;
-            exportsInfo.push({ pkg: exportParts[0], symbolsText: [] });
+            exportsInfo.push({ pkg: pkgName, symbolsText: [] });
         }
 
-        if (exportParts[1] == "*") {
+        if (exportName == "*") {
             exportInfo.allIncluded = true;
             exportsInfo[exportInfo.index].symbolsText = ["*"];
         }
         else {
-            exportsInfo[exportInfo.index].symbolsText.push(exportParts[1]);
+            exportsInfo[exportInfo.index].symbolsText.push(exportName);
         }
     }
+
+    pushExportItem(exportItemToken: ParseToken) {
+        let exportParts: string[] = exportItemToken.text.split('::');
+        this.pushExportItemParts(exportParts[0], exportParts[1]);
+    }
 }
+
+type SystemVerilogIndexParserParseArgs = { postText: string, document: TextDocument, preprocCache: Map<string, PreprocCacheEntry>, postTokens: PostToken[], tokenOrder: TokenOrderEntry[] }; //TMP
 
 export class SystemVerilogParser {
     private _completionGrammarEngine: GrammarEngine = new GrammarEngine(svcompletion_grammar, "meta.invalid.systemverilog");
@@ -295,6 +320,7 @@ export class SystemVerilogParser {
     private _tokenOrder: TokenOrderEntry[];
     private _containerStack: ContainerStack;
     private _currTokenNum: number;
+    private _svIndexParserParseArgs: SystemVerilogIndexParserParseArgs; //TMP
 
     private _debugContainerInfo(containerInfo: SystemVerilogParser.SystemVerilogContainerSymbolsInfo, symIndex: number) {
         if (symIndex == SystemVerilogParser.ContainerInfoIndex.Symbols) {
@@ -406,6 +432,7 @@ export class SystemVerilogParser {
             }
 
             let postText: string = preprocInfo.postTokens.map(tok => tok.text).join('');
+            this._svIndexParserParseArgs = { postText: postText, document: this._document, preprocCache: this._preprocCache, postTokens: preprocInfo.postTokens, tokenOrder: preprocInfo.tokenOrder }; //TMP
             let tokens: GrammarToken[] = this._completionGrammarEngine.tokenize(postText);
             let parseTokens: ParseToken[] = tokens.map(token => { return {text: token.text, scopes: token.scopes, startTokenIndex: undefined, endTokenIndex: undefined}; });
             let tokenOrder: TokenOrderEntry[] = [];
@@ -798,6 +825,9 @@ export class SystemVerilogParser {
 
         if (containerSymbol) {
             containerSymbol.defLocations = this._getDefLocations(containerTypeToken, prevToken);
+            //if (this._document.uri.endsWith("/i2c_wrapper.sv") && (containerSymbol.type[0] == "module")) {
+            //    ConnectionLogger.log(`DEBUG: old module ${containerSymbol.name} json symbol = ${containerSymbol.toJSON()}`);
+            //}
         }
 
         return true;
@@ -1124,7 +1154,9 @@ export class SystemVerilogParser {
                     break;
                 }
 
-                if (!this._processRoutineVarDeclaration() &&
+                if (!this._processPortDeclaration() &&
+                    !this._processTypeDef() &&
+                    !this._processRoutineVarDeclaration() &&
                     !this._processParamDeclaration()) {
                     //ConnectionLogger.log(`DEBUG: Routine ignoring statement at ${this._svtokens[this._currTokenNum].text}`);
                     this._currTokenNum--;
@@ -1304,11 +1336,11 @@ export class SystemVerilogParser {
                 }
                 else if (scope == "operator.semicolon.systemverilog") {
                     if (memberToken != undefined) {
-                        memberSymbol.defLocations = this._getDefLocations(startToken, prevToken);
+                        memberSymbol.defLocations = this._getDefLocations(startToken, this._currTokenNum);
                         memberToken = undefined;
                     }
                     else {
-                        memberSymbol = this._pushSymbol(prevIdToken, ["struct_union_member"], [startToken, prevToken]);
+                        memberSymbol = this._pushSymbol(prevIdToken, ["struct_union_member"], [startToken, this._currTokenNum]);
                     }
                     startToken = undefined;
                 }
@@ -1822,11 +1854,14 @@ export class SystemVerilogParser {
         this._printDebugInfo("simple keywords");
         if (["endinterface", "endmodule", "endpackage", "endprogram"].indexOf(this._svtokens[keywordToken].text) >= 0) {
             this._currTokenNum++;
-            this._processEndIdentifier();
+            if (!this._processEndIdentifier()) {
+                this._currTokenNum--;
+            }
             if (this._currTokenNum == this._svtokens.length) {
                 this._currTokenNum--;
             }
             this._containerStack.pop(this._getEndPosition());
+            this._currTokenNum++;
         }
 
         return true;
@@ -1868,7 +1903,7 @@ export class SystemVerilogParser {
                     }
                     else {
                         let types: string[] = ["port"].concat(portDataType || (portDataTypeToken == undefined ? [] : this._svtokens[portDataTypeToken].text));
-                        this._pushSymbol(prevIdToken, types, [startToken, prevToken]);
+                        this._pushSymbol(prevIdToken, types, [portTypeToken, prevToken]);
                     }
                     startToken = undefined;
                 }
@@ -3473,5 +3508,2625 @@ export namespace SystemVerilogParser {
             ConnectionLogger.error(error);
             return [];
         }
+    }
+}
+
+type MyTreeCursor = { currentNode: SyntaxNode };
+type SyntaxLeafNodeRange = { startIndex: number, endIndex: number, node: SyntaxNode | null };
+type IndexFileInfo = { startIndex: number, file: string };
+type SyntaxNodeRangeMap = { startIndexMap: Map<number, number>, endIndexMap: Map<number, number>, indexFileRanges: IndexFileInfo[] };
+type SymbolDefinitionRange = { startSynNode: SyntaxNode, endSynNode: SyntaxNode };
+
+export class SystemVerilogIndexParser {
+    private static readonly S_ALWAYS_CONSTRUCT: string = "always_construct";
+    private static readonly S_ANONYMOUS_PROGRAM: string = "anonymous_program";
+    private static readonly S_ANSI_OR_NONANSI_PORT_DECLARATION: string = "ansi_or_nonansi_port_declaration";
+    private static readonly S_ARRAY_IDENTIFIER: string = "array_identifier";
+    private static readonly S_ASSERTION_ITEM: string = "assertion_item";
+    private static readonly S_ASSERTION_ITEM_DECLARATION: string = "assertion_item_declaration";
+    private static readonly S_ATTRIBUTE_INSTANCE: string = "attribute_instance";
+    private static readonly S_BASE_GRAMMAR: string = "base_grammar";
+    private static readonly S_BASE_MODULE_OR_GENERATE_ITEM_STATEMENT: string = "base_module_or_generate_item_statement";
+    private static readonly S_BASE_STATEMENT: string = "base_statement";
+    private static readonly S_BEGIN_KEYWORD: string = "begin_keyword";
+    private static readonly S_BIND_DIRECTIVE: string = "bind_directive";
+    private static readonly S_BLOCK_ITEM_DECLARATION: string = "block_item_declaration";
+    private static readonly S_CASE_GENERATE_CONSTRUCT: string = "case_generate_construct";
+    private static readonly S_CHECKER_DECLARATION: string = "checker_declaration";
+    private static readonly S_CHANDLE_KEYWORD: string = "chandle_keyword";
+    private static readonly S_CLASS_DECLARATION: string = "class_declaration";
+    private static readonly S_CLASS_KEYWORD: string = "class_keyword";
+    private static readonly S_CLASS_SCOPE: string = "class_scope";
+    private static readonly S_CLASS_TYPE: string = "class_type";
+    private static readonly S_CLOCKING_DECLARATION: string = "clocking_declaration";
+    private static readonly S_CLOSE_CURLY_BRACES: string = 'close_curly_braces';
+    private static readonly S_CLOSE_PARANTHESES: string = 'close_parantheses';
+    private static readonly S_CLOSE_SQUARE_BRACKETS: string = 'close_square_brackets';
+    private static readonly S_COLON_OPERATOR: string = 'colon_operator';
+    private static readonly S_COMMA_OPERATOR: string = "comma_operator";
+    private static readonly S_COMMENT: string = "comment";
+    private static readonly S_CONDITIONAL_GENERATE_CONSTRUCT: string = "conditional_generate_construct";
+    private static readonly S_CONFIG_DECLARATION: string = "config_declaration";
+    private static readonly S_CONST_KEYWORD: string = "const_keyword";
+    private static readonly S_CONSTANT_EXPRESSION: string = "constant_expression";
+    private static readonly S_CONTINUOUS_ASSIGN: string = "continuous_assign";
+    private static readonly S_COVERGROUP_DECLARATION: string = "covergroup_declaration";
+    private static readonly S_CURLY_BRACKETS_BLOCK: string = "curly_brackets_block";
+    private static readonly S_DATA_TYPE: string = "data_type";
+    private static readonly S_DATA_TYPE_OR_VOID: string = "data_type_or_void";
+    private static readonly S_DEFAULT_CLOCKING_DECLARATION: string = "default_clocking_declaration";
+    private static readonly S_DEFAULT_DISABLE_DECLARATION: string = "default_disable_declaration";
+    private static readonly S_DELAY3: string = "delay3";
+    private static readonly S_DELAY_VALUE: string = "delay_value";
+    private static readonly S_DOUBLE_COLON_OPERATOR: string = "double_colon_operator";
+    private static readonly S_DOUBLE_QUOTED_STRING: string = "double_quoted_string";
+    private static readonly S_DOT_OPERATOR: string = "dot_operator";
+    private static readonly S_DPI_IMPORT_EXPORT: string = "dpi_import_export";
+    private static readonly S_EMPTY_PORT_DECLARATION: string = "empty_port_declaration";
+    private static readonly S_END_KEYWORD: string = "end_keyword";
+    private static readonly S_ENDFUNCTION_DECLARATION: string = "endfunction_declaration";
+    private static readonly S_ENDGENERATE_KEYWORD: string = "endgenerate_keyword";
+    private static readonly S_ENDINTERFACE_DECLARATION: string = "endinterface_declaration";
+    private static readonly S_ENDMODULE_DECLARATION: string = "endmodule_declaration";
+    private static readonly S_ENDPACKAGE_DECLARATION: string = "endpackage_declaration";
+    private static readonly S_ENDTASK_DECLARATION: string = "endtask_declaration";
+    private static readonly S_ENUM_BASE_TYPE: string = "enum_base_type";
+    private static readonly S_ENUM_KEYWORD: string = "enum_keyword";
+    private static readonly S_ENUM_NAME_DECLARATION: string = "enum_name_declaration";
+    private static readonly S_ELSE_KEYWORD: string = "else_keyword";
+    private static readonly S_EQUALS_OPERATOR: string = "equals_operator";
+    private static readonly S_ESCAPED_IDENTIFIER: string = "escaped_identifier";
+    private static readonly S_EVENT_CONTROL_BLOCK: string = "event_control_block";
+    private static readonly S_EVENT_KEYWORD: string = "event_keyword";
+    private static readonly S_EXPLICIT_DATA_DECLARATION: string = "explicit_data_declaration";
+    private static readonly S_EXPLICIT_DATA_INDICATOR: string = "explicit_data_indicator";
+    private static readonly S_EXPLICIT_DATA_TYPE: string = "explicit_data_type";
+    private static readonly S_EXPORT_KEYWORD: string = "export_keyword";
+    private static readonly S_EXPRESSION: string = "expression";
+    private static readonly S_EXTERN_CONSTRAINT_DECLARATION: string = "extern_constraint_declaration";
+    private static readonly S_EXTERN_KEYWORD: string = "extern_keyword";
+    private static readonly S_EXTERN_TF_DECLARATION: string = "extern_tf_declaration";
+    private static readonly S_EVENT_CONTROL_OPERATOR: string = "event_control_operator";
+    private static readonly S_FINAL_CONSTRUCT: string = "final_construct";
+    private static readonly S_FOR_KEYWORD: string = "for_keyword";
+    private static readonly S_FUNCTION_BODY_DECLARATION: string = "function_body_declaration";
+    private static readonly S_FUNCTION_DECLARATION: string = "function_declaration";
+    private static readonly S_FUNCTION_HEADER: string = "function_header";
+    private static readonly S_FUNCTION_IDENTIFIER: string = "function_identifier";
+    private static readonly S_FUNCTION_KEYWORD: string = "function_keyword";
+    private static readonly S_FUNCTION_NON_PORT_HEADER: string = "function_non_port_header";
+    private static readonly S_GATE_INSTANTIATION: string = "gate_instantiation";
+    private static readonly S_GENERATE_BLOCK: string = "generate_block";
+    private static readonly S_GENERATE_ITEM: string = "generate_item";
+    private static readonly S_GENERATE_KEYWORD: string = "generate_keyword";
+    private static readonly S_GENERATE_REGION: string = "generate_region";
+    private static readonly S_GENVAR_DECLARATION: string = "genvar_declaration";
+    private static readonly S_GENVAR_INITIALIZATION: string = "genvar_initialization";
+    private static readonly S_GENVAR_KEYWORD: string = "genvar_keyword";
+    private static readonly S_HASH_OPERATOR: string = "hash_operator";
+    private static readonly S_HASH_PARANTHESES_BLOCK: string = "hash_parantheses_block";
+    private static readonly S_HIERARCHICAL_IDENTIFIER: string = "hierarchical_identifier";
+    private static readonly S_IDENTIFIER: string = "identifier";
+    private static readonly S_IF_GENERATE_CONSTRUCT: string = "if_generate_construct";
+    private static readonly S_IF_KEYWORD: string = "if_keyword";
+    private static readonly S_IMPORT_KEYWORD: string = "import_keyword";
+    private static readonly S_INITIAL_CONSTRUCT: string = "initial_construct";
+    private static readonly S_INOUT_DECLARATION: string = "inout_declaration";
+    private static readonly S_INOUT_KEYWORD: string = "inout_keyword";
+    private static readonly S_INPUT_DECLARATION: string = "input_declaration";
+    private static readonly S_INPUT_KEYWORD: string = "input_keyword";
+    private static readonly S_INTEGER_ATOM_TYPE: string = "integer_atom_type";
+    private static readonly S_INTEGER_VECTOR_TYPE: string = "integer_vector_type";
+    private static readonly S_INTEGRAL_NUMBER: string = "integral_number";
+    private static readonly S_INTERCONNECT_KEYWORD: string = "interconnect_keyword";
+    private static readonly S_INTERFACE_DECLARATION: string = "interface_declaration";
+    private static readonly S_INTERFACE_HEADER: string = "interface_header";
+    private static readonly S_INTERFACE_ITEM: string = "interface_item";
+    private static readonly S_INTERFACE_KEYWORD: string = "interface_keyword";
+    private static readonly S_INTERFACE_OR_GENERATE_ITEM: string = "interface_or_generate_item";
+    private static readonly S_INTERFACE_PORT_HEADER: string = "interface_port_header";
+    private static readonly S_LET_DECLARATION: string = "let_declaration";
+    private static readonly S_LIFETIME: string = "lifetime";
+    private static readonly S_LIST_OF_PORT_DECLARATIONS: string = "list_of_port_declarations";
+    private static readonly S_LIST_OF_TF_VARIABLE_IDENTIFIERS: string = "list_of_tf_variable_identifiers";
+    private static readonly S_LIST_OF_VARIABLE_DECL_ASSIGNMENTS: string = "list_of_variable_decl_assignments";
+    private static readonly S_LOCALPARAM_DECLARATION: string = "localparam_declaration";
+    private static readonly S_LOCALPARAM_KEYWORD: string = "localparam_keyword";
+    private static readonly S_LOCALPARAM_NONTYPE_DECLARATION: string = "localparam_nontype_declaration";
+    private static readonly S_LOCALPARAM_TYPE_DECLARATION: string = "localparam_type_declaration";
+    private static readonly S_LOOP_GENERATE_CONSTRUCT: string = "loop_generate_construct";
+    private static readonly S_MACRO_IDENTIFIER: string = "macro_identifier";
+    private static readonly S_MODPORT_CLOCKING_DECLARATION: string = "modport_clocking_declaration";
+    private static readonly S_MODPORT_DECLARATION: string = "modport_declaration";
+    private static readonly S_MODPORT_KEYWORD: string = "modport_keyword";
+    private static readonly S_MODPORT_ITEM: string = "modport_item";
+    private static readonly S_MODPORT_PORTS_DECLARATION: string = "modport_ports_declaration";
+    private static readonly S_MODPORT_SIMPLE_PORT: string = "modport_simple_port";
+    private static readonly S_MODPORT_SIMPLE_PORTS_DECLARATION: string = "modport_simple_ports_declaration";
+    private static readonly S_MODPORT_TF_PORTS_DECLARATION: string = "modport_tf_ports_declaration";
+    private static readonly S_MODULE_COMMON_ITEM: string = "module_common_item";
+    private static readonly S_MODULE_DECLARATION: string = "module_declaration";
+    private static readonly S_MODULE_HEADER: string = "module_header";
+    private static readonly S_MODULE_ITEM: string = "module_item";
+    private static readonly S_MODULE_KEYWORD: string = "module_keyword";
+    private static readonly S_MODULE_OR_GENERATE_ITEM: string = "module_or_generate_item";
+    private static readonly S_MODULE_OR_GENERATE_ITEM_DECLARATION: string = "module_or_generate_item_declaration";
+    private static readonly S_NET_ALIAS: string = "net_alias";
+    private static readonly S_NET_DECL_ASSIGNMENT: string = "net_decl_assignment";
+    private static readonly S_NET_DECLARATION: string = "net_declaration";
+    private static readonly S_NET_IDENTIFIER: string = "net_identifier";
+    private static readonly S_NET_TYPE: string = "net_type";
+    private static readonly S_NET_TYPE_DECLARATION: string = "net_type_declaration";
+    private static readonly S_NON_INTEGER_TYPE: string = "non_integer_type";
+    private static readonly S_NON_PORT_MODULE_ITEM: string = "non_port_module_item";
+    private static readonly S_NON_PORT_INTERFACE_ITEM: string = "non_port_interface_item";
+    private static readonly S_NUMERIC_LITERAL: string = "numeric_literal";
+    private static readonly S_OPEN_CURLY_BRACES: string = 'open_curly_braces';
+    private static readonly S_OPEN_PARANTHESES: string = 'open_parantheses';
+    private static readonly S_OPEN_SQUARE_BRACKETS: string = 'open_square_brackets';
+    private static readonly S_OUTPUT_DECLARATION: string = "output_declaration";
+    private static readonly S_OUTPUT_KEYWORD: string = "output_keyword";
+    private static readonly S_PACKAGE_DECLARATION: string = "package_declaration";
+    private static readonly S_PACKAGE_EXPORT_DECLARATION: string = "package_export_declaration";
+    private static readonly S_PACKAGE_HEADER: string = "package_header";
+    private static readonly S_PACKAGE_IMPORT_DECLARATION: string = "package_import_declaration";
+    private static readonly S_PACKAGE_ITEM: string = "package_item";
+    private static readonly S_PACKAGE_KEYWORD: string = "package_keyword";
+    private static readonly S_PACKAGE_OR_GENERATE_ITEM_DECLARATION: string = "package_or_generate_item_declaration";
+    private static readonly S_PACKAGE_SCOPE: string = "package_scope";
+    private static readonly S_PACKED_KEYWORD: string = "packed_keyword";
+    private static readonly S_PARAM_ASSIGNMENT: string = "param_assignment";
+    private static readonly S_PARAMETER_DECLARATION: string = "parameter_declaration";
+    private static readonly S_PARAMETER_KEYWORD: string = "parameter_keyword";
+    private static readonly S_PARAMETER_NONTYPE_DECLARATION: string = "parameter_nontype_declaration";
+    private static readonly S_PARAMETER_OVERRIDE: string = "parameter_override";
+    private static readonly S_PARAMETER_PORT_LIST: string = "parameter_port_list";
+    private static readonly S_PARAMETER_TYPE_DECLARATION: string = "parameter_type_declaration";
+    private static readonly S_PARAMETRIZED_IDENTIFIER: string = "parametrized_identifier";
+    private static readonly S_PARANTHESES_BLOCK: string = "parantheses_block";
+    private static readonly S_PROGRAM_DECLARATION: string = "program_declaration";
+    private static readonly S_PORT_DECLARATION: string = "port_declaration";
+    private static readonly S_PORT_DIRECTION: string = "port_direction";
+    private static readonly S_RANDOM_QUALIFIER: string = "random_qualifier";
+    private static readonly S_REF_DECLARATION: string = "ref_declaration";
+    private static readonly S_REF_KEYWORD: string = "ref_keyword";
+    private static readonly S_SCALARED_KEYWORD: string = "scalared_keyword";
+    private static readonly S_SCOPED_IDENTIFIER: string = "scoped_identifier";
+    private static readonly S_SCOPED_AND_HIERARCHICAL_IDENTIFIER: string = "scoped_and_hierarchical_identifier";
+    private static readonly S_SEMICOLON_OPERATOR: string = "semicolon_operator";
+    private static readonly S_SIGNING: string = "signing";
+    private static readonly S_SIMPLE_IDENTIFIER: string = "simple_identifier";
+    private static readonly S_SIMPLE_OPERATORS: string = "simple_operators";
+    private static readonly S_SLASHED_OPERATORS: string = "slashed_operators";
+    private static readonly S_SPECIFY_BLOCK: string = "specify_block";
+    private static readonly S_SPECPARAM_DECLARATION: string = "specparam_declaration";
+    private static readonly S_SQUARE_BRACKETS_BLOCK: string = "square_brackets_block";
+    private static readonly S_STAR_OPERATOR: string = "star_operator";
+    private static readonly S_STATEMENT_ITEM: string = "statement_item";
+    private static readonly S_STATEMENT_OR_NULL: string = "statement_or_null";
+    private static readonly S_STRING_KEYWORD: string = "string_keyword";
+    private static readonly S_STRUCT_KEYWORD: string = "struct_keyword";
+    private static readonly S_STRUCT_UNION: string = "struct_union";
+    private static readonly S_STRUCT_UNION_MEMBER: string = "struct_union_member";
+    private static readonly S_TASK_BODY_DECLARATION: string = "task_body_declaration";
+    private static readonly S_TASK_DECLARATION: string = "task_declaration";
+    private static readonly S_TASK_IDENTIFIER: string = "task_identifier";
+    private static readonly S_TASK_KEYWORD: string = "task_keyword";
+    private static readonly S_TASK_NON_PORT_HEADER: string = "task_non_port_header";
+    private static readonly S_TASK_HEADER: string = "task_header";
+    private static readonly S_TF_PORT_DECLARATION: string = "tf_port_declaration";
+    private static readonly S_TF_PORT_DIRECTION: string = "tf_port_direction";
+    private static readonly S_TF_PORT_ITEM: string = "tf_port_item";
+    private static readonly S_TF_ITEM_DECLARATION: string = "tf_item_declaration";
+    private static readonly S_TIMEUNITS_DECLARATION: string = "timeunits_declaration";
+    private static readonly S_TYPE_ASSIGNMENT: string = "type_assignment";
+    private static readonly S_TYPE_DECLARATION: string = "type_declaration";
+    private static readonly S_TYPEDEF1_DECLARATION: string = "typedef1_declaration";
+    private static readonly S_TYPEDEF2_DECLARATION: string = "typedef2_declaration";
+    private static readonly S_TYPEDEF3_DECLARATION: string = "typedef3_declaration";
+    private static readonly S_TYPE_KEYWORD: string = "type_keyword";
+    private static readonly S_TYPE_REFERENCE: string = "type_reference";
+    private static readonly S_TYPEDEF_KEYWORD: string = "typedef_keyword";
+    private static readonly S_UDP_DECLARATION: string = "udp_declaration";
+    private static readonly S_UNION_KEYWORD: string = "union_keyword";
+    private static readonly S_UNIQUE_CHECKER_OR_GENERATE_ITEM: string = "unique_checker_or_generate_item";
+    private static readonly S_UNIQUE_INTERFACE_OR_GENERATE_ITEM: string = "unique_interface_or_generate_item";
+    private static readonly S_VARIABLE_DECL_ASSIGNMENT: string = "variable_decl_assignment";
+    private static readonly S_VARIABLE_PORT_HEADER: string = "variable_port_header";
+    private static readonly S_VARIABLE_PORT_TYPE: string = "variable_port_type";
+    private static readonly S_VAR_KEYWORD: string = "var_keyword";
+    private static readonly S_VECTORED_KEYWORD: string = "vectored_keyword";
+    private static readonly S_VIRTUAL_KEYWORD: string = "virtual_keyword";
+    private static readonly S_VOID_KEYWORD: string = "void_keyword";
+
+    private _anonStructUnionCount: number = 0;
+    private _anonEnumCount: number = 0;
+
+    private _document: TextDocument;
+    private _documentPath: string;
+    private _preprocCache: Map<string, PreprocCacheEntry>;
+    private _synLeafNodeRanges: SyntaxLeafNodeRange[];
+    private _synNodeRangeMap: SyntaxNodeRangeMap;
+    private _fileSymbolsInfo: SystemVerilogParser.SystemVerilogFileSymbolsInfo;
+    private _containerStack: ContainerStack;
+
+    private _calcSyntaxLeafNodeRanges(rootNode: SyntaxNode, uri: string, sourceText: string): SyntaxLeafNodeRange[] {
+        let result: SyntaxLeafNodeRange[] = [];
+
+        let prevEndIndex: number = 0;
+        visitLeafNodes(rootNode.walk(), (synNode) => {
+            if (synNode.startIndex < prevEndIndex) {
+                ConnectionLogger.error(`Out of order leaf nodes at ${synNode.startIndex}, ${prevEndIndex} in ${uri}`);
+                return;
+            }
+
+            if (synNode.startIndex > prevEndIndex) {
+                result.push({ startIndex: prevEndIndex, endIndex: synNode.startIndex, node: null });
+                prevEndIndex = synNode.startIndex;
+            }
+
+            // Workaround for tree-sitter bug where it matches both \r and \n in a regex like `/.*(\n|\r)?/`
+            let endIndex = synNode.endIndex;
+            if (synNode.text.endsWith('\r\n')) {
+                endIndex--;
+            }
+
+            if (endIndex > synNode.startIndex) {
+                result.push({ startIndex: synNode.startIndex, endIndex: endIndex, node: synNode });
+                prevEndIndex = endIndex;
+            }
+            else if (endIndex < synNode.startIndex) {
+                ConnectionLogger.error(`Leaf node with end index smaller than startIndex!!! (${synNode.startIndex}, ${synNode.endIndex}, ${endIndex})`);
+            }
+        });
+
+        if (sourceText.length > prevEndIndex) {
+            result.push({ startIndex: prevEndIndex, endIndex: sourceText.length, node: null });
+        }
+
+        return result;
+    }
+
+    private _reRangeSyntaxNodes(postTokens: PostToken[], tokenOrder: TokenOrderEntry[], sourceText: string, uri: string): SyntaxNodeRangeMap {
+        let result: SyntaxNodeRangeMap = { startIndexMap: new Map(), endIndexMap: new Map(), indexFileRanges: new Array() };
+        let currentPostToken: number = 0;
+        let currentTokenOrderIndex: number = 0;
+        let currentFile: string = (tokenOrder.length > 0) && (tokenOrder[0].tokenNum == 0) ? tokenOrder[0].file : this._documentPath;
+
+        //if (uri.endsWith("/i2c_wrapper.sv")) {
+        //    tokenOrder.forEach(to => { ConnectionLogger.log(`DEBUG: ${to.file} ${to.tokenNum}`); });
+        //}
+        this._synLeafNodeRanges.forEach(synLeafNodeRange => {
+            //ConnectionLogger.log(`DEBUG: Processing synLeafNodeRange (${synLeafNodeRange.startIndex}, ${synLeafNodeRange.endIndex}) |${synLeafNodeRange.node === null ? "" : synLeafNodeRange.node.text}|`);
+            if (currentPostToken >= postTokens.length) {
+                ConnectionLogger.error(`Range (${synLeafNodeRange.startIndex}, ${synLeafNodeRange.endIndex}) out of bounds (${postTokens[postTokens.length-1].endIndex}) in ${uri}`);
+            }
+            else {
+                let newStartIndex: number = postTokens[currentPostToken].index;
+                //if (uri.endsWith("/i2c_wrapper.sv")) {
+                //    ConnectionLogger.log(`DEBUG: adding entry to startIndexMap - ${synLeafNodeRange.node?.type} ${synLeafNodeRange.startIndex}, ${newStartIndex}, ${currentFile}`);
+                //}
+                result.startIndexMap.set(synLeafNodeRange.startIndex, newStartIndex);
+
+                let newEndIndex: number;
+                let currentLength: number = 0;
+                let rangeLength: number = synLeafNodeRange.endIndex - synLeafNodeRange.startIndex;
+                for (;currentPostToken < postTokens.length; currentPostToken++) {
+                    if ((currentTokenOrderIndex < tokenOrder.length) && (tokenOrder[currentTokenOrderIndex].tokenNum == currentPostToken)) {
+                        currentFile = tokenOrder[currentTokenOrderIndex].file;
+                        currentTokenOrderIndex++;
+                        result.indexFileRanges.push({ startIndex: synLeafNodeRange.startIndex + currentLength, file: currentFile });
+                    }
+
+                    //ConnectionLogger.log(`DEBUG: Processing postToken (${postTokens[currentPostToken].index}, ${currentPostToken}, ${postTokens[currentPostToken].text.length}) |${postTokens[currentPostToken].text}|`);
+                    newEndIndex = postTokens[currentPostToken].endIndex + 1;
+                    currentLength += postTokens[currentPostToken].text.length;
+
+                    if (currentLength >= rangeLength) {
+                        if (currentLength > rangeLength) {
+                            ConnectionLogger.error(`PostToken split across range token in ${uri} at (${postTokens[currentPostToken].index}, ${postTokens[currentPostToken].endIndex}), (${synLeafNodeRange.endIndex})`);
+                        }
+                        currentPostToken++;
+                        break;
+                    }
+
+                    if (currentPostToken >= (postTokens.length - 1)) {
+                        ConnectionLogger.error(`Ran out of post tokens at (${synLeafNodeRange.endIndex}) in ${uri}`);
+                    }
+                }
+
+                if (newEndIndex === undefined) {
+                    ConnectionLogger.error(`Non-positive length range (${rangeLength}) found at ${synLeafNodeRange.startIndex} in ${uri}`);
+                }
+                else {
+                    result.endIndexMap.set(synLeafNodeRange.endIndex, newEndIndex);
+                //if (uri.endsWith("/i2c_wrapper.sv")) {
+                //    ConnectionLogger.log(`DEBUG: adding entry to endIndexMap - ${synLeafNodeRange.node?.type} ${synLeafNodeRange.endIndex}, ${newEndIndex}, ${currentFile}`);
+                //}
+                }
+            }
+        });
+        //if (uri.endsWith("/i2c_wrapper.sv")) {
+        //    result.indexFileRanges.forEach(r => ConnectionLogger.log(`DEBUG: index file range ${r.startIndex} ${r.endIndex} ${r.file}`));
+        //}
+        return result;
+    }
+
+    private _getDocumentFromFilePath(filePath: string): TextDocument {
+        if (filePath == this._documentPath) {
+            return this._document;
+        }
+
+        let shortFilePath: string;
+        for (let [sfile, fileInfo] of this._preprocCache) {
+            if (fileInfo.file == filePath) {
+                shortFilePath = sfile;
+                break;
+            }
+        }
+        if (!!shortFilePath) {
+            return this._preprocCache.get(shortFilePath).doc;
+        }
+
+        ConnectionLogger.error(`Could not find include cache for ${filePath}`);
+        return undefined;
+    }
+
+    private _getStartingIndexFileRangesIndex(startIndex: number): number {
+        let start: number = 0;
+        let end: number = this._synNodeRangeMap.indexFileRanges.length - 1;
+        let loopCount = 0;
+        while (start <= end) {
+            loopCount++;
+            if (loopCount > 100) {
+                return -1;
+            }
+            let doubleTheMid: number = end + start;
+            let mid: number = (doubleTheMid - (doubleTheMid % 2))/2;
+            if ((this._synNodeRangeMap.indexFileRanges[mid].startIndex <= startIndex) &&
+               ((mid == (this._synNodeRangeMap.indexFileRanges.length - 1)) || (this._synNodeRangeMap.indexFileRanges[mid+1].startIndex > startIndex))) {
+                return mid;
+            }
+            else if (this._synNodeRangeMap.indexFileRanges[mid].startIndex < startIndex) {
+                start = mid + 1;
+            }
+            else {
+                end = mid - 1;
+            }
+        }
+
+        return -1;
+    }
+
+    private _getDocumentRange(doc: TextDocument, startIndex: number, endIndex: number): Range {
+        return Range.create(doc.positionAt(startIndex), doc.positionAt(endIndex));
+    }
+
+    private _getEndPosition(synNode: SyntaxNode): SystemVerilogParser.SystemVerilogPosition {
+        let startingIndexFileRangesIndex: number = this._getStartingIndexFileRangesIndex(synNode.startIndex);
+        if (startingIndexFileRangesIndex < 0) {
+            ConnectionLogger.error(`Could not figure out the source file for the given syntax node (${synNode.startIndex}). Falling back to default`);
+            let endPos: Position = this._document.positionAt(this._synNodeRangeMap.endIndexMap.get(synNode.endIndex));
+            return { line: endPos.line, character: endPos.character };
+        }
+
+        let document: TextDocument = this._getDocumentFromFilePath(this._synNodeRangeMap.indexFileRanges[startingIndexFileRangesIndex].file);
+        if (document == undefined) {
+            ConnectionLogger.error(`Could not figure out the source file for the given syntax node (${synNode.startIndex}). Falling back to default`);
+            let endPos: Position = this._document.positionAt(this._synNodeRangeMap.endIndexMap.get(synNode.endIndex));
+            return { line: endPos.line, character: endPos.character };
+        }
+
+        let refDocumentPath: string = this._containerStack.getContainerDocumentPath(document.uri);
+        let endPos: Position = (this._document.uri == refDocumentPath)
+                             ? this._document.positionAt(this._synNodeRangeMap.endIndexMap.get(synNode.endIndex))
+                             : document.positionAt(this._synNodeRangeMap.endIndexMap.get(synNode.endIndex));
+        return (this._document.uri == refDocumentPath) ? { line: endPos.line, character: endPos.character } : { file: refDocumentPath, line: endPos.line, character: endPos.character };
+    }
+
+    private _getDefLocations(startSynNode: SyntaxNode, endSynNode: SyntaxNode): DefinitionLocations {
+        let startingIndexFileRangesIndex: number = this._getStartingIndexFileRangesIndex(startSynNode.startIndex);
+        if (startingIndexFileRangesIndex < 0) {
+            ConnectionLogger.error(`Could not figure out the source file for the given range (${startSynNode.startIndex}, ${endSynNode.endIndex}). Falling back to default`);
+            return this._getDocumentRange(this._document, this._synNodeRangeMap.startIndexMap.get(startSynNode.startIndex), this._synNodeRangeMap.endIndexMap.get(endSynNode.endIndex));
+        }
+
+        let result: DefinitionLocations = [];
+        let currentStartIndex: number = startSynNode.startIndex;
+        let currentFilePath: string = this._synNodeRangeMap.indexFileRanges[startingIndexFileRangesIndex].file;
+        let currentDoc: TextDocument = this._document;
+        if (currentFilePath != this._documentPath) {
+            let currentDocTmp: TextDocument = this._getDocumentFromFilePath(currentFilePath);
+            if (currentDocTmp !== undefined) {
+                currentDoc = currentDocTmp;
+                result.push(currentDoc.uri);
+            }
+        }
+
+        //if (this._document.uri.endsWith("/i2c_wrapper.sv")) {
+        //    ConnectionLogger.log(`DEBUG: HERE with ${currentStartIndex}, ${endSynNode.endIndex}, ${currentFilePath}, ${startingIndexFileRangesIndex}, ${this._synNodeRangeMap.indexFileRanges.length}`);
+        //}
+        for (let i: number = startingIndexFileRangesIndex; i < this._synNodeRangeMap.indexFileRanges.length; i++) {
+            if ((i == (this._synNodeRangeMap.indexFileRanges.length - 1)) ||
+                (endSynNode.endIndex < this._synNodeRangeMap.indexFileRanges[i+1].startIndex)) {
+                result.push(this._getDocumentRange(currentDoc, this._synNodeRangeMap.startIndexMap.get(currentStartIndex), this._synNodeRangeMap.endIndexMap.get(endSynNode.endIndex)));
+                break;
+            }
+            else {
+                let synNodeRangeEndIndex: number = this._synNodeRangeMap.indexFileRanges[i+1].startIndex;
+                result.push(this._getDocumentRange(currentDoc, this._synNodeRangeMap.startIndexMap.get(currentStartIndex), this._synNodeRangeMap.endIndexMap.get(synNodeRangeEndIndex)));
+
+                currentStartIndex = synNodeRangeEndIndex;
+                currentFilePath = this._synNodeRangeMap.indexFileRanges[i+1].file;
+                let currentDocTmp: TextDocument = this._getDocumentFromFilePath(currentFilePath);
+                if (currentDocTmp !== undefined) {
+                    currentDoc = currentDocTmp;
+                    result.push(currentDoc.uri);
+                }
+            }
+        }
+
+        if (result.length == 1) {
+            result = <Range>result[0];
+        }
+        return result;
+    }
+
+    private _createSymbol(synNode: SyntaxNode, symbolType: string[], definitionRange?: SymbolDefinitionRange, symbolText?: string): SystemVerilogSymbol {
+        let startingIndexFileRangesIndex:number = this._getStartingIndexFileRangesIndex(synNode.startIndex);
+        let filePath: string = this._documentPath;
+        if (startingIndexFileRangesIndex < 0) {
+            ConnectionLogger.error(`Could not figure out the source file for the given range (${synNode.startIndex}, ${synNode.endIndex}). Falling back to default`);
+        }
+        else {
+            filePath = this._synNodeRangeMap.indexFileRanges[startingIndexFileRangesIndex].file;
+        }
+        let document: TextDocument = this._getDocumentFromFilePath(filePath);
+        if (document == undefined) {
+            return;
+        }
+        let symbolName: string = symbolText || synNode.text;
+        let symbolRange: Range = this._getDocumentRange(document, this._synNodeRangeMap.startIndexMap.get(synNode.startIndex), this._synNodeRangeMap.endIndexMap.get(synNode.endIndex));
+        //if (this._document.uri.endsWith("/i2c_wrapper.sv")) {
+        //    ConnectionLogger.log(`DEBUG: symbolRange: from ${document.uri}, ${synNode.startIndex}, ${synNode.endIndex}, ${this._synNodeRangeMap.startIndexMap.get(synNode.startIndex).file}, ${this._synNodeRangeMap.startIndexMap.get(synNode.startIndex)}, ${this._synNodeRangeMap.endIndexMap.get(synNode.endIndex)}, ${symbolRange.start.line} ${symbolRange.start.character} ${symbolRange.end.line} ${symbolRange.end.character}`);
+        //}
+        return new SystemVerilogSymbol(
+            symbolName,
+            !!definitionRange ? this._getDefLocations(definitionRange.startSynNode, definitionRange.endSynNode) : undefined,
+            document.uri == this._document.uri ? symbolRange : [document.uri, symbolRange],
+            this._containerStack.toStringList(),
+            symbolType
+        );
+    }
+
+    private _pushSymbol(synNode: SyntaxNode, symbolType: string[], definitionRange?: SymbolDefinitionRange, symbolText?: string): SystemVerilogSymbol {
+        let symbol: SystemVerilogSymbol = this._createSymbol(synNode, symbolType, definitionRange, symbolText);
+        symbol = this._containerStack.pushSymbol(symbol);
+        return symbol;
+    }
+
+    private _pushContainerSymbol(synNode: SyntaxNode, symbolType: string[], definitionRange?: SymbolDefinitionRange, symbolText?: string): SystemVerilogSymbol {
+        let containerSymbol: SystemVerilogSymbol = this._createSymbol(synNode, symbolType, definitionRange, symbolText);
+        containerSymbol = this._containerStack.push(containerSymbol);
+        //if (this._document.uri.endsWith("/i2c_wrapper.sv")) {
+        //    ConnectionLogger.log(`DEBUG: new module ${synNode.text} json symbol = ${containerSymbol.toJSON()}`);
+        //}
+        return containerSymbol;
+    }
+
+    private _ignoreSymbol(treeCursor: MyTreeCursor, symbolType: string): Boolean {
+        if (treeCursor.currentNode.type == symbolType) {
+            //ConnectionLogger.log(`DEBUG: ignored symbol type ${symbolType} till ${treeCursor.currentNode.endPosition.row}, ${treeCursor.currentNode.endPosition.column}`);
+            return true;
+        }
+        return false;
+    }
+
+    private _isEscapedOrSimpleIdentifier(synNode: SyntaxNode): Boolean {
+        return (synNode.type == SystemVerilogIndexParser.S_ESCAPED_IDENTIFIER) ||
+               (synNode.type == SystemVerilogIndexParser.S_SIMPLE_IDENTIFIER);
+    }
+
+    private _isAllAllow(synNode: SyntaxNode): Boolean {
+        return (synNode.type == SystemVerilogIndexParser.S_COMMENT) ||
+               (synNode.type == SystemVerilogIndexParser.S_MACRO_IDENTIFIER) ||
+               (synNode.type == SystemVerilogIndexParser.S_ATTRIBUTE_INSTANCE);
+    }
+
+    private _isBaseGrammar(synNode: SyntaxNode): Boolean {
+        return (synNode.type == SystemVerilogIndexParser.S_DOUBLE_QUOTED_STRING) ||
+               (synNode.type == SystemVerilogIndexParser.S_NUMERIC_LITERAL) ||
+               (synNode.type == SystemVerilogIndexParser.S_IDENTIFIER) ||
+               (synNode.type == SystemVerilogIndexParser.S_SIMPLE_OPERATORS) ||
+               (synNode.type == SystemVerilogIndexParser.S_SLASHED_OPERATORS) ||
+               (synNode.type == SystemVerilogIndexParser.S_EVENT_CONTROL_OPERATOR) ||
+               (synNode.type == SystemVerilogIndexParser.S_HASH_OPERATOR) ||
+               (synNode.type == SystemVerilogIndexParser.S_COMMA_OPERATOR) ||
+               (synNode.type == SystemVerilogIndexParser.S_DOT_OPERATOR) ||
+               (synNode.type == SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) ||
+               (synNode.type == SystemVerilogIndexParser.S_CURLY_BRACKETS_BLOCK) ||
+               (synNode.type == SystemVerilogIndexParser.S_PARANTHESES_BLOCK) ||
+               (synNode.type == SystemVerilogIndexParser.S_HASH_PARANTHESES_BLOCK) ||
+               (synNode.type == SystemVerilogIndexParser.S_EVENT_CONTROL_BLOCK);
+    }
+
+    private _getEscapedOrSimpleIdentifier(synNode: SyntaxNode) : SyntaxNode {
+        if (synNode.firstChild === null) {
+            return undefined;
+        }
+        else if (this._isEscapedOrSimpleIdentifier(synNode.firstChild)) {
+            return synNode.firstChild;
+        }
+        else if (synNode.firstChild.type == SystemVerilogIndexParser.S_ARRAY_IDENTIFIER) {
+            if (synNode.firstChild.firstChild === null) {
+                return undefined;
+            }
+            else if (this._isEscapedOrSimpleIdentifier(synNode.firstChild.firstChild)) {
+                return synNode.firstChild.firstChild;
+            }
+        }
+
+        return  undefined;
+    }
+
+    private _getDataType(parentNode: SyntaxNode): string {
+        let synNode: SyntaxNode = parentNode.firstChild;
+        if (synNode !== null) {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                return synNode.text;
+            }
+            else if ((synNode.type == SystemVerilogIndexParser.S_ARRAY_IDENTIFIER) ||
+                     (synNode.type == SystemVerilogIndexParser.S_PARAMETRIZED_IDENTIFIER)) {
+                if ((synNode.firstChild !== null) && this._isEscapedOrSimpleIdentifier(synNode.firstChild)) {
+                    return synNode.firstChild.text;
+                }
+            }
+            else if ((synNode.type == SystemVerilogIndexParser.S_SCOPED_IDENTIFIER) ||
+                     (synNode.type == SystemVerilogIndexParser.S_HIERARCHICAL_IDENTIFIER) ||
+                     (synNode.type == SystemVerilogIndexParser.S_SCOPED_AND_HIERARCHICAL_IDENTIFIER)) {
+                let endIndex: number = synNode.endIndex;
+                synNode.children.forEach(childSynNode => {
+                    if (childSynNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) {
+                        endIndex = childSynNode.endIndex;
+                    }
+                });
+                return synNode.text.substring(0, endIndex - synNode.startIndex);
+            }
+            else {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} while getting data type for ${parentNode.text} in ${this._documentPath}`);
+            }
+        }
+        return undefined;
+    }
+
+    private _getInstType(parentNode: SyntaxNode): string {
+        return this._getDataType(parentNode);
+    }
+
+    private _processImportDeclaration(treeCursor: MyTreeCursor) {
+        let _pkgName: string;
+        let _pkgSymbol: string;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                if (_pkgName === undefined) {
+                    _pkgName = synNode.text;
+                }
+                else {
+                    _pkgSymbol = synNode.text;
+                }
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_STAR_OPERATOR) {
+                if (_pkgName !== undefined) {
+                    _pkgSymbol = "*";
+                }
+            }
+            else if ((synNode.type == SystemVerilogIndexParser.S_COMMA_OPERATOR) ||
+                     (synNode.type == SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                if ((_pkgName !== undefined) && (_pkgSymbol !== undefined)) {
+                    this._containerStack.pushImportItemParts(_pkgName, _pkgSymbol);
+                }
+                _pkgName = undefined;
+                _pkgSymbol = undefined;
+            }
+            else if ((synNode.type != SystemVerilogIndexParser.S_IMPORT_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_DOUBLE_COLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a import declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processParamAssignment(treeCursor: MyTreeCursor, types: string[], startSymbol?: SyntaxNode) {
+        if (treeCursor.currentNode.firstChild !== null) {
+            if (this._isEscapedOrSimpleIdentifier(treeCursor.currentNode.firstChild)) {
+                this._pushSymbol(
+                    treeCursor.currentNode.firstChild,
+                    types,
+                    { startSynNode: startSymbol === null ? treeCursor.currentNode.firstChild : startSymbol, endSynNode: treeCursor.currentNode.lastChild }
+                );
+            }
+        }
+    }
+
+    private _processTypeAssignment(treeCursor: MyTreeCursor, types: string[], startSymbol?: SyntaxNode) {
+        if (treeCursor.currentNode.firstChild !== null) {
+            if (this._isEscapedOrSimpleIdentifier(treeCursor.currentNode.firstChild)) {
+                this._pushSymbol(
+                    treeCursor.currentNode.firstChild,
+                    types,
+                    { startSynNode: startSymbol === null ? treeCursor.currentNode.firstChild : startSymbol, endSynNode: treeCursor.currentNode.lastChild }
+                );
+            }
+        }
+    }
+
+    private _processNonTypeParamDeclaration(treeCursor: MyTreeCursor, keywordSymbol: string, types: string[]) {
+        let dataType: string[] = [];
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_PARAM_ASSIGNMENT) {
+                this._processParamAssignment({ currentNode: synNode }, types.concat([keywordSymbol.replace(/_keyword$/, '')]).concat(dataType.length > 0 ? [dataType.join(' ')] : []), treeCursor.currentNode.firstChild);
+                dataType = [];
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                dataType.push(this._processDataType({ currentNode: synNode }));
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_SIGNING) {
+                dataType.push(synNode.text);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) &&
+                     (synNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR) &&
+                     (synNode.type != keywordSymbol)) {
+                ConnectionLogger.error(`Invalid symbol type ${synNode.type} in a parameter_nontype_declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processTypeParamDeclaration(treeCursor: MyTreeCursor, keywordSymbol: string) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_TYPE_ASSIGNMENT) {
+                this._processTypeAssignment({ currentNode: synNode }, ["parameter-port", "type"].concat(keywordSymbol.replace(/_keyword$/, '')), treeCursor.currentNode.firstChild);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != keywordSymbol) &&
+                     (synNode.type != SystemVerilogIndexParser.S_TYPE_KEYWORD)) {
+                ConnectionLogger.error(`Invalid symbol type ${synNode.type} in a parameter_nontype_declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processParameterDeclaration(treeCursor: MyTreeCursor, types: string[]): Boolean {
+        if (treeCursor.currentNode.type != SystemVerilogIndexParser.S_PARAMETER_DECLARATION) {
+            return false;
+        }
+
+        if (treeCursor.currentNode.firstChild !== null) {
+            if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_PARAMETER_NONTYPE_DECLARATION) {
+                this._processNonTypeParamDeclaration({ currentNode: treeCursor.currentNode.firstChild }, SystemVerilogIndexParser.S_PARAMETER_KEYWORD, types);
+            }
+            else if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_PARAMETER_TYPE_DECLARATION) {
+                this._processTypeParamDeclaration({ currentNode: treeCursor.currentNode.firstChild }, SystemVerilogIndexParser.S_PARAMETER_KEYWORD);
+            }
+            else {
+                ConnectionLogger.error(`Invalid first child ${treeCursor.currentNode.firstChild.type} of a parameter declaration in ${this._documentPath}`);
+            }
+        }
+        else {
+            ConnectionLogger.error(`Invalid parameter declaration with no child in ${this._documentPath}`);
+        }
+
+        return true;
+    }
+
+    private _processLocalParamDeclaration(treeCursor: MyTreeCursor, types: string[]): Boolean {
+        if (treeCursor.currentNode.type != SystemVerilogIndexParser.S_LOCALPARAM_DECLARATION) {
+            return false;
+        }
+
+        if (treeCursor.currentNode.firstChild !== null) {
+            if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_LOCALPARAM_NONTYPE_DECLARATION) {
+                this._processNonTypeParamDeclaration({ currentNode: treeCursor.currentNode.firstChild }, SystemVerilogIndexParser.S_LOCALPARAM_KEYWORD, types);
+            }
+            else if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_LOCALPARAM_TYPE_DECLARATION) {
+                this._processTypeParamDeclaration({ currentNode: treeCursor.currentNode.firstChild }, SystemVerilogIndexParser.S_LOCALPARAM_KEYWORD);
+            }
+            else {
+                ConnectionLogger.error(`Invalid first child ${treeCursor.currentNode.firstChild.type} of a localparam declaration in ${this._documentPath}`);
+            }
+        }
+        else {
+            ConnectionLogger.error(`Invalid localparam declaration with no child in ${this._documentPath}`);
+        }
+
+        return true;
+    }
+
+    private _processVariableDeclAssignment(treeCursor: MyTreeCursor, symType: string[], defSynNode: SyntaxNode) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, symType, { startSynNode: defSynNode, endSynNode: defSynNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EQUALS_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EXPRESSION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a variable decl assignments in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processListOfVariableDeclAssignments(treeCursor: MyTreeCursor, symType: string[], defSynNode: SyntaxNode) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_VARIABLE_DECL_ASSIGNMENT) {
+                this._processVariableDeclAssignment({ currentNode: synNode }, symType, defSynNode);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a list of variable decl assignments in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processStructUnionMember(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE_OR_VOID) {
+                this._processDataTypeOrVoid({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_LIST_OF_VARIABLE_DECL_ASSIGNMENTS) {
+                this._processListOfVariableDeclAssignments({ currentNode: synNode }, ["struct_union_member"], treeCursor.currentNode);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ATTRIBUTE_INSTANCE) &&
+                     (synNode.type != SystemVerilogIndexParser.S_RANDOM_QUALIFIER) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a struct union member in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processStructUnionDeclaration(treeCursor: MyTreeCursor): string {
+        let structUnionName: string = `#AnonymousStructUnion${this._anonStructUnionCount}`
+        this._anonStructUnionCount++;
+
+        let structSymbol: SystemVerilogSymbol = this._pushContainerSymbol(
+            treeCursor.currentNode.firstChild,
+            [treeCursor.currentNode.firstChild.text],
+            { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode },
+            structUnionName);
+
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_STRUCT_UNION_MEMBER) {
+                this._processStructUnionMember({currentNode: synNode});
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_STRUCT_UNION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_PACKED_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SIGNING) &&
+                     (synNode.type != SystemVerilogIndexParser.S_OPEN_CURLY_BRACES) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLOSE_CURLY_BRACES) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a struct union declaration in ${this._documentPath}`);
+            }
+        });
+
+        this._containerStack.pop(this._getEndPosition(treeCursor.currentNode.lastChild));
+
+        return structUnionName;
+    }
+
+    private _processEnumNameDeclaration(treeCursor: MyTreeCursor, enumName: string) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, ["enum_member", enumName], { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_OPEN_SQUARE_BRACKETS) &&
+                     (synNode.type != SystemVerilogIndexParser.S_INTEGRAL_NUMBER) &&
+                     (synNode.type != SystemVerilogIndexParser.S_COLON_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLOSE_SQUARE_BRACKETS) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EQUALS_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CONSTANT_EXPRESSION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in an enum name declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processEnumDeclaration(treeCursor: MyTreeCursor): string {
+        let enumName: string = `#AnonymousEnum${this._anonStructUnionCount}`
+        this._anonEnumCount++;
+
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_ENUM_NAME_DECLARATION) {
+                this._processEnumNameDeclaration({currentNode: synNode}, enumName);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ENUM_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ENUM_BASE_TYPE) &&
+                     (synNode.type != SystemVerilogIndexParser.S_OPEN_CURLY_BRACES) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLOSE_CURLY_BRACES) &&
+                     (synNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in an enum declaration in ${this._documentPath}`);
+            }
+        });
+
+        return enumName;
+    }
+
+    private _processClassOrPackageScopedDataType(treeCursor: MyTreeCursor) {
+        let dataType: string[] = [];
+        treeCursor.currentNode.children.forEach(synNode => {
+            if ((synNode.type == SystemVerilogIndexParser.S_CLASS_SCOPE) ||
+                (synNode.type == SystemVerilogIndexParser.S_PACKAGE_SCOPE) ||
+                this._isEscapedOrSimpleIdentifier(synNode)) {
+                dataType.push(synNode.text);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a class or package scope data type in ${this._documentPath}`);
+            }
+        });
+        return dataType.join('');
+    }
+
+    private _processDataType(treeCursor: MyTreeCursor): string {
+        if (treeCursor.currentNode.firstChild !== null) {
+            if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_STRUCT_UNION) {
+                return this._processStructUnionDeclaration({ currentNode: treeCursor.currentNode });
+            }
+            else if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_ENUM_KEYWORD) {
+                return this._processEnumDeclaration({ currentNode: treeCursor.currentNode });
+            }
+            else if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_INTEGER_VECTOR_TYPE) {
+                let dataType: string[] = [];
+                treeCursor.currentNode.children.forEach(synNode => {
+                    if ((synNode.type == SystemVerilogIndexParser.S_INTEGER_VECTOR_TYPE) ||
+                        (synNode.type == SystemVerilogIndexParser.S_SIGNING)) {
+                        dataType.push(synNode.text);
+                    }
+                    else if (!this._isAllAllow(synNode) &&
+                             (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK)) {
+                        ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a integer vector type in ${this._documentPath}`);
+                    }
+                });
+                return dataType.join(' ');
+            }
+            else if ((treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_INTEGER_ATOM_TYPE) ||
+                     (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_VIRTUAL_KEYWORD)) {
+                return treeCursor.currentNode.text;
+            }
+            else if ((treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_CLASS_SCOPE) ||
+                     (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_PACKAGE_SCOPE)) {
+                return this._processClassOrPackageScopedDataType(treeCursor);
+            }
+            else if ((treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_NON_INTEGER_TYPE) ||
+                     (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_STRING_KEYWORD) ||
+                     (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_CHANDLE_KEYWORD) ||
+                     (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_EVENT_KEYWORD) ||
+                     (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_CLASS_TYPE) ||
+                     this._isEscapedOrSimpleIdentifier(treeCursor.currentNode.firstChild)) {
+                return treeCursor.currentNode.firstChild.text;
+            }
+            else if (!this._isAllAllow(treeCursor.currentNode.firstChild) &&
+                     (treeCursor.currentNode.firstChild.type != SystemVerilogIndexParser.S_TYPE_REFERENCE)) {
+                ConnectionLogger.error(`Unexpected symbol type ${treeCursor.currentNode.firstChild.type} in a data type ${this._documentPath}`);
+            }
+        }
+        return undefined;
+    }
+
+    private _processDataTypeOrVoid(treeCursor: MyTreeCursor): string {
+        if (treeCursor.currentNode.firstChild !== null) {
+            if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                return this._processDataType({ currentNode: treeCursor.currentNode.firstChild });
+            }
+            else if (treeCursor.currentNode.firstChild.type != SystemVerilogIndexParser.S_VOID_KEYWORD) {
+                ConnectionLogger.error(`Unexpected symbol type ${treeCursor.currentNode.firstChild.type} in data type or void in ${this._documentPath}`);
+            }
+        }
+        return undefined;
+    }
+
+    private _processParameterPortList(treeCursor: MyTreeCursor) {
+        let startSymbol: SyntaxNode = null;
+        let dataType: string;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_PARAM_ASSIGNMENT) {
+                this._processParamAssignment({ currentNode: synNode }, ["parameter-port"].concat(dataType || []), startSymbol);
+                startSymbol = null;
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TYPE_ASSIGNMENT) {
+                this._processTypeAssignment({ currentNode: synNode }, undefined, startSymbol);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_PARAMETER_DECLARATION) {
+                this._processParameterDeclaration({ currentNode: synNode }, ["parameter-port"]);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_LOCALPARAM_DECLARATION) {
+                this._processLocalParamDeclaration({ currentNode: synNode }, ["parameter-port"]);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                dataType = this._processDataType({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TYPE_KEYWORD) {
+                startSymbol = synNode;
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_HASH_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_OPEN_PARANTHESES) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLOSE_PARANTHESES)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a parameter port list in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processVariablePortType(treeCursor: MyTreeCursor): string {
+        let dataType: string[] = [];
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                dataType.push(this._processDataType({ currentNode: synNode }));
+            }
+            else if ((synNode.type == SystemVerilogIndexParser.S_VAR_KEYWORD) ||
+                     (synNode.type == SystemVerilogIndexParser.S_SIGNING)) {
+                dataType.push(synNode.text);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a variable port type in ${this._documentPath}`);
+            }
+        });
+        return dataType.join(' ');
+    }
+
+    private _processVariablePortHeader(treeCursor: MyTreeCursor): string {
+        let dataType: string;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_VARIABLE_PORT_TYPE) {
+                dataType = this._processVariablePortType({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_PORT_DIRECTION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a variable port header in ${this._documentPath}`);
+            }
+        });
+        return dataType;
+    }
+
+    private _processAnsiOrNonAnsiPortDeclaration(treeCursor: MyTreeCursor) {
+        let dataType: string[] = [];
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, ["port"].concat(dataType.join(' ')), { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+                dataType = [];
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                dataType.push(this._processDataType({ currentNode: synNode }));
+            }
+            else if ((synNode.type == SystemVerilogIndexParser.S_NET_TYPE) ||
+                     (synNode.type == SystemVerilogIndexParser.S_PORT_DIRECTION) ||
+                     (synNode.type == SystemVerilogIndexParser.S_SIGNING) ||
+                     (synNode.type == SystemVerilogIndexParser.S_INTERCONNECT_KEYWORD)) {
+                dataType.push(synNode.text);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_VARIABLE_PORT_HEADER) {
+                dataType.push(this._processVariablePortHeader({ currentNode: synNode }));
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_INTERFACE_PORT_HEADER) {
+                dataType.push(synNode.text);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EQUALS_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CONSTANT_EXPRESSION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_DOT_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_PARANTHESES_BLOCK) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CURLY_BRACKETS_BLOCK)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a ansi or non ansi port declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processPortList(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_ANSI_OR_NONANSI_PORT_DECLARATION) {
+                this._processAnsiOrNonAnsiPortDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_COMMA_OPERATOR) {
+                //TBD
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ATTRIBUTE_INSTANCE) &&
+                     (synNode.type != SystemVerilogIndexParser.S_OPEN_PARANTHESES) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLOSE_PARANTHESES)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a port list in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processModuleHeader(treeCursor: MyTreeCursor, isExtern: Boolean) {
+        //TBD extern
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushContainerSymbol(synNode, ["module"], { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_PACKAGE_IMPORT_DECLARATION) {
+                this._processImportDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_PARAMETER_PORT_LIST) {
+                this._processParameterPortList({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_LIST_OF_PORT_DECLARATIONS) {
+                this._processPortList({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_MODULE_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_LIFETIME) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EMPTY_PORT_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a module header in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processInoutDeclaration(treeCursor: MyTreeCursor) {
+        let netTypeText: string;
+        let dataTypeText: string;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_NET_TYPE) {
+                netTypeText = synNode.text;
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                dataTypeText = this._processDataType({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_INTERCONNECT_KEYWORD) {
+                netTypeText = synNode.text;
+            }
+            else if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, [dataTypeText === undefined ? netTypeText : dataTypeText], { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_INOUT_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SIGNING) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in an inout declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processInputDeclaration(treeCursor: MyTreeCursor) {
+        let netTypeText: string;
+        let dataTypeText: string;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_NET_TYPE) {
+                netTypeText = synNode.text;
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                dataTypeText = this._processDataType({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_INTERCONNECT_KEYWORD) {
+                netTypeText = synNode.text;
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_VARIABLE_PORT_TYPE) {
+                dataTypeText = this._processVariablePortType({ currentNode: synNode });
+            }
+            else if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, [dataTypeText === undefined ? netTypeText : dataTypeText], { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_INPUT_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SIGNING) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in an inout declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processOutputDeclaration(treeCursor: MyTreeCursor) {
+        let netTypeText: string;
+        let dataTypeText: string;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_NET_TYPE) {
+                netTypeText = synNode.text;
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                dataTypeText = this._processDataType({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_INTERCONNECT_KEYWORD) {
+                netTypeText = synNode.text;
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_VARIABLE_PORT_TYPE) {
+                dataTypeText = this._processVariablePortType({ currentNode: synNode });
+            }
+            else if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, [dataTypeText === undefined ? netTypeText : dataTypeText], { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_OUTPUT_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SIGNING) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in an inout declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processRefDeclaration(treeCursor: MyTreeCursor) {
+        let netTypeText: string;
+        let dataTypeText: string;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_VARIABLE_PORT_TYPE) {
+                dataTypeText = this._processVariablePortType({ currentNode: synNode });
+            }
+            else if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, [dataTypeText === undefined ? netTypeText : dataTypeText], { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_REF_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in an inout declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processPortDeclaration(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_INOUT_DECLARATION) {
+                this._processInoutDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_INPUT_DECLARATION) {
+                this._processInputDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_OUTPUT_DECLARATION) {
+                this._processOutputDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_REF_DECLARATION) {
+                this._processRefDeclaration({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a port declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processInstantiationInBaseGrammar(startSynNodeIndex: number, baseGrammarSynNodes: SyntaxNode[]): number {
+        let synNodeIndex: number = startSynNodeIndex;
+        while ((synNodeIndex < baseGrammarSynNodes.length) && this._isAllAllow(baseGrammarSynNodes[synNodeIndex])) {
+            synNodeIndex++;
+        }
+        if (synNodeIndex >= baseGrammarSynNodes.length) {
+            return startSynNodeIndex;
+        }
+
+        let instTypeSynNode: SyntaxNode = baseGrammarSynNodes[synNodeIndex];
+        if (instTypeSynNode.type != SystemVerilogIndexParser.S_IDENTIFIER) {
+            return startSynNodeIndex;
+        }
+
+        let instType: string;
+        while (synNodeIndex < baseGrammarSynNodes.length) {
+            synNodeIndex++;
+            while ((synNodeIndex < baseGrammarSynNodes.length) && this._isAllAllow(baseGrammarSynNodes[synNodeIndex])) {
+                synNodeIndex++;
+            }
+            if (synNodeIndex >= baseGrammarSynNodes.length) {
+                return startSynNodeIndex;
+            }
+
+            let instSynNode: SyntaxNode = baseGrammarSynNodes[synNodeIndex];
+            if (instSynNode.type != SystemVerilogIndexParser.S_IDENTIFIER) {
+                return startSynNodeIndex;
+            }
+
+            synNodeIndex++;
+            while ((synNodeIndex < baseGrammarSynNodes.length) && this._isAllAllow(baseGrammarSynNodes[synNodeIndex])) {
+                synNodeIndex++;
+            }
+            if (synNodeIndex >= baseGrammarSynNodes.length) {
+                return startSynNodeIndex;
+            }
+
+            let parenSynNode: SyntaxNode = baseGrammarSynNodes[synNodeIndex];
+            if (parenSynNode.type != SystemVerilogIndexParser.S_PARANTHESES_BLOCK) {
+                return startSynNodeIndex;
+            }
+
+            synNodeIndex++;
+            while ((synNodeIndex < baseGrammarSynNodes.length) && this._isAllAllow(baseGrammarSynNodes[synNodeIndex])) {
+                synNodeIndex++;
+            }
+            if (synNodeIndex >= baseGrammarSynNodes.length) {
+                return startSynNodeIndex;
+            }
+
+            let opSynNode: SyntaxNode = baseGrammarSynNodes[synNodeIndex];
+            if ((opSynNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) &&
+                (opSynNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR)) {
+                return startSynNodeIndex;
+            }
+
+            let instNameSynNode: SyntaxNode = this._getEscapedOrSimpleIdentifier(instSynNode);
+            if (!!instNameSynNode) {
+                if (!instType) {
+                    instType = this._getInstType(instTypeSynNode);
+                }
+                this._pushSymbol(instNameSynNode, ["instance"].concat(!!instType ? [instType] : []), { startSynNode: instTypeSynNode, endSynNode: baseGrammarSynNodes[synNodeIndex] });
+                if (baseGrammarSynNodes[synNodeIndex].type == SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) {
+                    return synNodeIndex + 1;
+                }
+            }
+        }
+
+        return startSynNodeIndex;
+    }
+
+    private _processBaseGrammarModuleItems(baseGrammarModuleItems: SyntaxNode[]) {
+        let currSynNodeIndex: number = 0;
+        let prevSyntaxNodeIndx: number = 0;
+        while (currSynNodeIndex < baseGrammarModuleItems.length) {
+            if (prevSyntaxNodeIndx == currSynNodeIndex) {
+                currSynNodeIndex = this._processVariableDeclarationInBaseGrammar(currSynNodeIndex, baseGrammarModuleItems);
+            }
+
+            if (prevSyntaxNodeIndx == currSynNodeIndex) {
+                currSynNodeIndex = this._processInstantiationInBaseGrammar(currSynNodeIndex, baseGrammarModuleItems);
+            }
+
+            if ((prevSyntaxNodeIndx == currSynNodeIndex) && this._isAllAllow(baseGrammarModuleItems[currSynNodeIndex])) {
+                currSynNodeIndex++;
+            }
+
+            if (prevSyntaxNodeIndx == currSynNodeIndex) {
+                currSynNodeIndex = this._processNullStatementInBaseGrammar(currSynNodeIndex, baseGrammarModuleItems);
+            }
+
+            if (prevSyntaxNodeIndx == currSynNodeIndex) {
+                ConnectionLogger.error(`Unexpected symbol type ${baseGrammarModuleItems[currSynNodeIndex].type} in module item base grammar at index ${baseGrammarModuleItems[currSynNodeIndex].startIndex} in ${this._documentPath}`);
+                currSynNodeIndex++;
+            }
+            prevSyntaxNodeIndx = currSynNodeIndex;
+        }
+    }
+
+    private _processGenvarDeclaration(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, ["variable", "genvar"], { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                (synNode.type != SystemVerilogIndexParser.S_GENVAR_KEYWORD) &&
+                (synNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR) &&
+                (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in genvar declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processModuleOrGenerateItemDeclaration(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_PACKAGE_OR_GENERATE_ITEM_DECLARATION) {
+                this._processPackageOrGenerateItemDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_GENVAR_DECLARATION) {
+                this._processGenvarDeclaration({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                (synNode.type != SystemVerilogIndexParser.S_CLOCKING_DECLARATION) &&
+                (synNode.type != SystemVerilogIndexParser.S_DEFAULT_CLOCKING_DECLARATION) &&
+                (synNode.type != SystemVerilogIndexParser.S_DEFAULT_DISABLE_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in module or generate item declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processGenvarInitialization(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, ["variable", "genvar"], { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                (synNode.type != SystemVerilogIndexParser.S_GENVAR_KEYWORD) &&
+                (synNode.type != SystemVerilogIndexParser.S_EQUALS_OPERATOR) &&
+                (synNode.type != SystemVerilogIndexParser.S_BASE_GRAMMAR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in genvar initialization in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processLoopGenerateConstruct(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_GENERATE_ITEM) {
+                this._processGenerateItem({ currentNode: synNode});
+            }
+            else if (!this._isAllAllow(synNode) &&
+                (synNode.type != SystemVerilogIndexParser.S_FOR_KEYWORD) &&
+                (synNode.type != SystemVerilogIndexParser.S_OPEN_PARANTHESES) &&
+                (synNode.type != SystemVerilogIndexParser.S_GENVAR_INITIALIZATION) &&
+                (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) &&
+                (synNode.type != SystemVerilogIndexParser.S_BASE_GRAMMAR) &&
+                (synNode.type != SystemVerilogIndexParser.S_CLOSE_PARANTHESES)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in loop generate construct in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processIfGenerateConstruct(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_GENERATE_ITEM) {
+                this._processGenerateItem({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                 (synNode.type != SystemVerilogIndexParser.S_IF_KEYWORD) &&
+                 (synNode.type != SystemVerilogIndexParser.S_PARANTHESES_BLOCK) &&
+                 (synNode.type != SystemVerilogIndexParser.S_ELSE_KEYWORD)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in if generate construct in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processConditionalGenerateConstruct(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_IF_GENERATE_CONSTRUCT) {
+                this._processIfGenerateConstruct({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_CASE_GENERATE_CONSTRUCT) {
+                //TBD
+            }
+            else if (!this._isAllAllow(synNode)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in conditional generate construct in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processModuleCommonItem(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_MODULE_OR_GENERATE_ITEM_DECLARATION) {
+                this._processModuleOrGenerateItemDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_LOOP_GENERATE_CONSTRUCT) {
+                this._processLoopGenerateConstruct({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_CONDITIONAL_GENERATE_CONSTRUCT) {
+                this._processConditionalGenerateConstruct({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                (synNode.type != SystemVerilogIndexParser.S_ASSERTION_ITEM) &&
+                (synNode.type != SystemVerilogIndexParser.S_BIND_DIRECTIVE) &&
+                (synNode.type != SystemVerilogIndexParser.S_CONTINUOUS_ASSIGN) &&
+                (synNode.type != SystemVerilogIndexParser.S_NET_ALIAS) &&
+                (synNode.type != SystemVerilogIndexParser.S_INITIAL_CONSTRUCT) &&
+                (synNode.type != SystemVerilogIndexParser.S_FINAL_CONSTRUCT) &&
+                (synNode.type != SystemVerilogIndexParser.S_ALWAYS_CONSTRUCT)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a module common item in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processModuleOrGenerateItem(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_GATE_INSTANTIATION) {
+                //TBD
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_MODULE_COMMON_ITEM) {
+                this._processModuleCommonItem({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_BASE_MODULE_OR_GENERATE_ITEM_STATEMENT) {
+                this._processBaseGrammarModuleItems(synNode.children);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ATTRIBUTE_INSTANCE) &&
+                     (synNode.type != SystemVerilogIndexParser.S_PARAMETER_OVERRIDE)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a module or generate item in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processGenerateBlock(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_GENERATE_ITEM) {
+                this._processGenerateItem({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                 !this._isEscapedOrSimpleIdentifier(synNode) &&
+                 (synNode.type != SystemVerilogIndexParser.S_COLON_OPERATOR) &&
+                 (synNode.type != SystemVerilogIndexParser.S_BEGIN_KEYWORD) &&
+                 (synNode.type != SystemVerilogIndexParser.S_END_KEYWORD)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a generate block in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processGenerateItem(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_MODULE_OR_GENERATE_ITEM) {
+                this._processModuleOrGenerateItem({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_UNIQUE_INTERFACE_OR_GENERATE_ITEM) {
+                //TBD
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_UNIQUE_CHECKER_OR_GENERATE_ITEM) {
+                //TBD
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_GENERATE_BLOCK) {
+                this._processGenerateBlock({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a generate item in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processGenerateRegion(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_GENERATE_ITEM) {
+                this._processGenerateItem({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_GENERATE_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ENDGENERATE_KEYWORD)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a generate region in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processNonPortModuleItem(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_GENERATE_REGION) {
+                this._processGenerateRegion({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_MODULE_OR_GENERATE_ITEM) {
+                this._processModuleOrGenerateItem({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_MODULE_DECLARATION) {
+                this._processModuleDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_INTERFACE_DECLARATION) {
+                this._processInterfaceDeclaration({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ATTRIBUTE_INSTANCE) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SPECIFY_BLOCK) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SPECPARAM_DECLARATION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_PROGRAM_DECLARATION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_TIMEUNITS_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a non port module item in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processModuleItem(treeCursor: MyTreeCursor) {
+        if (treeCursor.currentNode.firstChild != null) {
+            if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_PORT_DECLARATION) {
+                treeCursor.currentNode.children.forEach(synNode => {
+                    if (synNode.type == SystemVerilogIndexParser.S_PORT_DECLARATION) {
+                        this._processPortDeclaration({ currentNode: synNode });
+                    }
+                    else if (!this._isAllAllow(synNode) &&
+                             (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                        ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a module item port declaration in ${this._documentPath}`);
+                    }
+                });
+            }
+            else if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_NON_PORT_MODULE_ITEM) {
+                this._processNonPortModuleItem({ currentNode: treeCursor.currentNode.firstChild });
+            }
+            else {
+                ConnectionLogger.error(`Unexpected symbol type ${treeCursor.currentNode.firstChild.type} in a module item in ${this._documentPath}`);
+            }
+        }
+    }
+
+    private _processModuleDeclaration(treeCursor: MyTreeCursor): Boolean {
+        if (treeCursor.currentNode.type != SystemVerilogIndexParser.S_MODULE_DECLARATION) {
+            return false;
+        }
+
+        let extern_module: Boolean = (treeCursor.currentNode.firstChild !== null) && (treeCursor.currentNode.firstChild.type === SystemVerilogIndexParser.S_EXTERN_KEYWORD);
+
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_MODULE_HEADER) {
+                this._processModuleHeader({ currentNode: synNode }, extern_module);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_MODULE_ITEM) {
+                this._processModuleItem({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EXTERN_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ENDMODULE_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a ${extern_module ? "extern" : ""} module header in ${this._documentPath}`);
+            }
+        });
+
+        this._containerStack.pop(this._getEndPosition(treeCursor.currentNode.lastChild));
+
+        return true;
+    }
+
+    private _processInterfaceHeader(treeCursor: MyTreeCursor, isExtern: Boolean) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushContainerSymbol(synNode, ["interface"], { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_PACKAGE_IMPORT_DECLARATION) {
+                this._processImportDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_PARAMETER_PORT_LIST) {
+                this._processParameterPortList({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_LIST_OF_PORT_DECLARATIONS) {
+                this._processPortList({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_INTERFACE_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_LIFETIME) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EMPTY_PORT_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a interface header in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processInterfaceOrGenerateItem(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_MODULE_COMMON_ITEM) {
+                this._processModuleCommonItem({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_BASE_MODULE_OR_GENERATE_ITEM_STATEMENT) {
+                this._processBaseGrammarModuleItems(synNode.children);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ATTRIBUTE_INSTANCE) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EXTERN_TF_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a interface or generate item in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processModportSimplePort(treeCursor: MyTreeCursor, parentNode: SyntaxNode) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, ["port", parentNode.firstChild.text], { startSynNode: parentNode, endSynNode: parentNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_DOT_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_PARANTHESES_BLOCK)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a modport simple port in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processModportSimplePortsDeclaration(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_MODPORT_SIMPLE_PORT) {
+                this._processModportSimplePort({ currentNode: synNode }, treeCursor.currentNode);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_PORT_DIRECTION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a modport simple ports declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processModportPortsDeclaration(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_MODPORT_SIMPLE_PORTS_DECLARATION) {
+                this._processModportSimplePortsDeclaration({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ATTRIBUTE_INSTANCE) &&
+                     (synNode.type != SystemVerilogIndexParser.S_MODPORT_TF_PORTS_DECLARATION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_MODPORT_CLOCKING_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a modport ports declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processModportItem(treeCursor: MyTreeCursor) {
+        let modportSymbol: SystemVerilogSymbol = this._pushContainerSymbol(
+            treeCursor.currentNode.firstChild,
+            ["modport"],
+            { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_MODPORT_PORTS_DECLARATION) {
+                this._processModportPortsDeclaration({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     !this._isEscapedOrSimpleIdentifier(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_OPEN_PARANTHESES) &&
+                     (synNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLOSE_PARANTHESES)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a modport item in ${this._documentPath}`);
+            }
+        });
+
+        this._containerStack.pop(this._getEndPosition(treeCursor.currentNode.lastChild));
+    }
+
+    private _processModportDeclaration(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_MODPORT_ITEM) {
+                this._processModportItem({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_MODPORT_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a module or generate item in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processNonPortInterfaceItem(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_GENERATE_REGION) {
+                this._processGenerateRegion({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_INTERFACE_OR_GENERATE_ITEM) {
+                this._processInterfaceOrGenerateItem({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_INTERFACE_DECLARATION) {
+                this._processInterfaceDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_MODPORT_DECLARATION) {
+                this._processModportDeclaration({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_PROGRAM_DECLARATION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_TIMEUNITS_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a non port interface item in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processInterfaceItem(treeCursor: MyTreeCursor) {
+        if (treeCursor.currentNode.firstChild != null) {
+            if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_PORT_DECLARATION) {
+                treeCursor.currentNode.children.forEach(synNode => {
+                    if (synNode.type == SystemVerilogIndexParser.S_PORT_DECLARATION) {
+                        this._processPortDeclaration({ currentNode: synNode });
+                    }
+                    else if (!this._isAllAllow(synNode) &&
+                             (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                        ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in an interface item port declaration in ${this._documentPath}`);
+                    }
+                });
+            }
+            else if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_NON_PORT_INTERFACE_ITEM) {
+                this._processNonPortInterfaceItem({ currentNode: treeCursor.currentNode.firstChild });
+            }
+            else {
+                ConnectionLogger.error(`Unexpected symbol type ${treeCursor.currentNode.firstChild.type} in an interface item in ${this._documentPath}`);
+            }
+        }
+    }
+
+    private _processInterfaceDeclaration(treeCursor: MyTreeCursor): Boolean {
+        if (treeCursor.currentNode.type != SystemVerilogIndexParser.S_INTERFACE_DECLARATION) {
+            return false;
+        }
+
+        let extern_interface: Boolean = (treeCursor.currentNode.firstChild !== null) && (treeCursor.currentNode.firstChild.type === SystemVerilogIndexParser.S_EXTERN_KEYWORD);
+
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_INTERFACE_HEADER) {
+                this._processInterfaceHeader({ currentNode: synNode }, extern_interface);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_INTERFACE_ITEM) {
+                this._processInterfaceItem({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EXTERN_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ENDINTERFACE_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a ${extern_interface ? "extern" : ""} interface header in ${this._documentPath}`);
+            }
+        });
+
+        this._containerStack.pop(this._getEndPosition(treeCursor.currentNode.lastChild));
+
+        return true;
+    }
+
+    private _processPackageHeader(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushContainerSymbol(synNode, ["package"], { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_PACKAGE_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_LIFETIME) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a package header in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processPackageExportDeclaration(treeCursor: MyTreeCursor) {
+        let packageName: string;
+        let exportName: string;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_STAR_OPERATOR) {
+                if (packageName === undefined) {
+                    packageName = synNode.text;
+                }
+                else if (exportName === undefined) {
+                    exportName = synNode.text;
+                }
+                else {
+                    ConnectionLogger.error(`Parsing failed for symbol ${synNode.text} in a package export declaration in ${this._documentPath}`);
+                }
+            }
+            else if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                if (packageName === undefined) {
+                    packageName = synNode.text;
+                }
+                else if (exportName === undefined) {
+                    exportName = synNode.text;
+                }
+                else {
+                    ConnectionLogger.error(`Parsing failed for symbol ${synNode.text} in a package export declaration in ${this._documentPath}`);
+                }
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EXPORT_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_DOUBLE_COLON_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a package export declaration in ${this._documentPath}`);
+            }
+        });
+        if ((packageName !== undefined) && (exportName !== undefined)) {
+            this._containerStack.pushExportItemParts(packageName, exportName);
+        }
+    }
+
+    private _processNetDeclAssignment(treeCursor: MyTreeCursor, definitionRange: SymbolDefinitionRange, netTypeText?: string, dataTypeText?: string) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_NET_IDENTIFIER) {
+                this._pushSymbol(synNode.firstChild, ["variable"].concat([dataTypeText === undefined ? netTypeText : dataTypeText]), definitionRange);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     !this._isBaseGrammar(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EQUALS_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EXPRESSION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a net decl assignment in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processNetDeclaration(treeCursor: MyTreeCursor) {
+        let netTypeText: string;
+        let dataTypeText: string;
+        if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_NET_TYPE) {
+            treeCursor.currentNode.children.forEach(synNode => {
+                if (synNode.type == SystemVerilogIndexParser.S_NET_TYPE) {
+                    netTypeText = synNode.text;
+                }
+                else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                    dataTypeText = this._processDataType({ currentNode: synNode });
+                }
+                else if (synNode.type == SystemVerilogIndexParser.S_NET_DECL_ASSIGNMENT) {
+                    this._processNetDeclAssignment({ currentNode: synNode }, { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode }, netTypeText, dataTypeText);
+                }
+                else if (!this._isAllAllow(synNode) &&
+                         (synNode.type != SystemVerilogIndexParser.S_PARANTHESES_BLOCK) &&
+                         (synNode.type != SystemVerilogIndexParser.S_VECTORED_KEYWORD) &&
+                         (synNode.type != SystemVerilogIndexParser.S_SCALARED_KEYWORD) &&
+                         (synNode.type != SystemVerilogIndexParser.S_SIGNING) &&
+                         (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) &&
+                         (synNode.type != SystemVerilogIndexParser.S_DELAY3) &&
+                         (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                    ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a net declaration in ${this._documentPath}`);
+                }
+            });
+        }
+        else if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_INTERCONNECT_KEYWORD) {
+            treeCursor.currentNode.children.forEach(synNode => {
+                if (synNode.type == SystemVerilogIndexParser.S_INTERCONNECT_KEYWORD) {
+                    netTypeText = synNode.text;
+                }
+                else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                    dataTypeText = this._processDataType({ currentNode: synNode });
+                }
+                else if (synNode.type == SystemVerilogIndexParser.S_NET_IDENTIFIER) {
+                    this._pushSymbol(synNode, [dataTypeText === undefined ? netTypeText : dataTypeText], { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+                }
+                else if (!this._isAllAllow(synNode) &&
+                         (synNode.type != SystemVerilogIndexParser.S_SIGNING) &&
+                         (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) &&
+                         (synNode.type != SystemVerilogIndexParser.S_HASH_OPERATOR) &&
+                         (synNode.type != SystemVerilogIndexParser.S_DELAY_VALUE) &&
+                         (synNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR) &&
+                         (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                    ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a interconnect net declaration in ${this._documentPath}`);
+                }
+            });
+        }
+    }
+
+    private _processExplicitDataIndicatorExplicitDataDeclaration(treeCursor: MyTreeCursor) {
+        let dataTypeText: string;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                dataTypeText = this._processDataType({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_LIST_OF_VARIABLE_DECL_ASSIGNMENTS) {
+                this._processListOfVariableDeclAssignments({ currentNode: synNode }, ["variable"].concat(dataTypeText || []), treeCursor.currentNode);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EXPLICIT_DATA_INDICATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a explicit data indicator explicit data declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processExplicitDataTypeExplicitDataDeclaration(treeCursor: MyTreeCursor) {
+        let dataTypeText: string;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_EXPLICIT_DATA_TYPE) {
+                dataTypeText = this._processDataType({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_LIST_OF_VARIABLE_DECL_ASSIGNMENTS) {
+                this._processListOfVariableDeclAssignments({ currentNode: synNode }, ["variable"].concat(dataTypeText || []), treeCursor.currentNode);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a explicit data type explicit data declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processTypedef1Declaration(treeCursor: MyTreeCursor) {
+        let symType: string[] = [];
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_TYPEDEF_KEYWORD) {
+                symType.push(synNode.text);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                symType.push(this._processDataType({ currentNode: synNode }));
+            }
+            else if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, symType, { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a typedef1 declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processTypedef2Declaration(treeCursor: MyTreeCursor) {
+        let idCount: number = 0;
+        let symType: string[] = [];
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_TYPEDEF_KEYWORD) {
+                symType.push(synNode.text);
+            }
+            else if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                if (idCount == 0) {
+                    symType.push("");
+                }
+                idCount++;
+                if (idCount == 3) {
+                    this._pushSymbol(synNode, symType, { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+                }
+                else {
+                    symType[symType.length - 1] += synNode.text;
+                }
+            }
+            else if ((synNode.type == SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) ||
+                     (synNode.type == SystemVerilogIndexParser.S_DOT_OPERATOR)) {
+                symType[symType.length - 1] += synNode.text;
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a typedef1 declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processTypedef3Declaration(treeCursor: MyTreeCursor) {
+        let typedefKeywordText: string;
+        let symType: string[] = [];
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_TYPEDEF_KEYWORD) {
+                typedefKeywordText = synNode.text;
+            }
+            else if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, [typedefKeywordText].concat(symType), { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+            }
+            else if ((synNode.type == SystemVerilogIndexParser.S_ENUM_KEYWORD) ||
+                     (synNode.type == SystemVerilogIndexParser.S_STRUCT_KEYWORD) ||
+                     (synNode.type == SystemVerilogIndexParser.S_UNION_KEYWORD) ||
+                     (synNode.type == SystemVerilogIndexParser.S_CLASS_KEYWORD) ||
+                     (synNode.type == SystemVerilogIndexParser.S_INTERFACE_KEYWORD)) {
+                symType.push(synNode.text);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a typedef1 declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processTypeDeclaration(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_TYPEDEF1_DECLARATION) {
+                this._processTypedef1Declaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TYPEDEF2_DECLARATION) {
+                this._processTypedef2Declaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TYPEDEF3_DECLARATION) {
+                this._processTypedef3Declaration({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a type declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processExplicitDataDeclaration(treeCursor: MyTreeCursor) {
+        if (treeCursor.currentNode.firstChild !== null) {
+            if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_EXPLICIT_DATA_INDICATOR) {
+                this._processExplicitDataIndicatorExplicitDataDeclaration(treeCursor);
+            }
+            else if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_EXPLICIT_DATA_TYPE) {
+                this._processExplicitDataTypeExplicitDataDeclaration(treeCursor);
+            }
+            else if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_PACKAGE_IMPORT_DECLARATION) {
+                this._processImportDeclaration({ currentNode: treeCursor.currentNode.firstChild });
+            }
+            else if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_TYPE_DECLARATION) {
+                this._processTypeDeclaration({ currentNode: treeCursor.currentNode.firstChild });
+            }
+            else if (!this._isAllAllow(treeCursor.currentNode.firstChild) &&
+                     (treeCursor.currentNode.firstChild.type != SystemVerilogIndexParser.S_NET_TYPE_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${treeCursor.currentNode.firstChild.type} in a explicit data declaration in ${this._documentPath}`);
+            }
+        }
+    }
+
+    private _processVariableInDataDeclaration(treeCursor: MyTreeCursor) {
+        let dataType: string[] = [];
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                dataType.push(this._processDataType({ currentNode: synNode }));
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_LIST_OF_VARIABLE_DECL_ASSIGNMENTS) {
+                this._processListOfVariableDeclAssignments({ currentNode: synNode }, ["variable"].concat(dataType.length > 0 ? dataType.join(' ') : []), treeCursor.currentNode);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CONST_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_VAR_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_LIFETIME) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SIGNING) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a variable in data declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processDataDeclaration(treeCursor: MyTreeCursor) {
+        if (treeCursor.currentNode.firstChild !== null) {
+            if ((treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_CONST_KEYWORD) ||
+                (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_VAR_KEYWORD) ||
+                (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_LIFETIME) ||
+                (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_DATA_TYPE) ||
+                (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_SIGNING) ||
+                (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK)) {
+                this._processVariableInDataDeclaration(treeCursor);
+            }
+            else if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_TYPE_DECLARATION) {
+                this._processTypeDeclaration({ currentNode: treeCursor.currentNode.firstChild });
+            }
+            else if (treeCursor.currentNode.firstChild.type == SystemVerilogIndexParser.S_PACKAGE_IMPORT_DECLARATION) {
+                this._processImportDeclaration({ currentNode: treeCursor.currentNode.firstChild });
+            }
+            else if (!this._isAllAllow(treeCursor.currentNode.firstChild) &&
+                     (treeCursor.currentNode.firstChild.type != SystemVerilogIndexParser.S_NET_TYPE_DECLARATION) &&
+                     (treeCursor.currentNode.firstChild.type != SystemVerilogIndexParser.S_LIST_OF_VARIABLE_DECL_ASSIGNMENTS)) {
+                ConnectionLogger.error(`Unexpected symbol type ${treeCursor.currentNode.firstChild.type} in a data declaration in ${this._documentPath}`);
+            }
+        }
+    }
+
+    private _processVariableDeclarationInBaseGrammar(startSynNodeIndex: number, baseGrammarSynNodes: SyntaxNode[]): number {
+        let synNodeIndex: number = startSynNodeIndex;
+        while ((synNodeIndex < baseGrammarSynNodes.length) && this._isAllAllow(baseGrammarSynNodes[synNodeIndex])) {
+            synNodeIndex++;
+        }
+        if (synNodeIndex >= baseGrammarSynNodes.length) {
+            return startSynNodeIndex;
+        }
+
+        let dataTypeSynNode: SyntaxNode = baseGrammarSynNodes[synNodeIndex];
+        if (dataTypeSynNode.type != SystemVerilogIndexParser.S_IDENTIFIER) {
+            return startSynNodeIndex;
+        }
+
+        let dataType: string;
+        while (synNodeIndex < baseGrammarSynNodes.length) {
+            synNodeIndex++;
+            while ((synNodeIndex < baseGrammarSynNodes.length) && this._isAllAllow(baseGrammarSynNodes[synNodeIndex])) {
+                synNodeIndex++;
+            }
+            if (synNodeIndex >= baseGrammarSynNodes.length) {
+                return startSynNodeIndex;
+            }
+
+            let varSynNode: SyntaxNode = baseGrammarSynNodes[synNodeIndex];
+            if (varSynNode.type != SystemVerilogIndexParser.S_IDENTIFIER) {
+                return startSynNodeIndex;
+            }
+
+            synNodeIndex++;
+            while ((synNodeIndex < baseGrammarSynNodes.length) && this._isAllAllow(baseGrammarSynNodes[synNodeIndex])) {
+                synNodeIndex++;
+            }
+            if (synNodeIndex >= baseGrammarSynNodes.length) {
+                return startSynNodeIndex;
+            }
+
+            let opSynNode: SyntaxNode = baseGrammarSynNodes[synNodeIndex];
+            if ((opSynNode.type != SystemVerilogIndexParser.S_SIMPLE_OPERATORS) &&
+                (opSynNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) &&
+                (opSynNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR)) {
+                return startSynNodeIndex;
+            }
+            if ((opSynNode.type == SystemVerilogIndexParser.S_SIMPLE_OPERATORS) &&
+               (opSynNode.text != '=')) {
+                return startSynNodeIndex;
+            }
+
+            while (synNodeIndex < baseGrammarSynNodes.length) {
+                if ((baseGrammarSynNodes[synNodeIndex].type == SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) ||
+                    (baseGrammarSynNodes[synNodeIndex].type == SystemVerilogIndexParser.S_COMMA_OPERATOR)) {
+                    break;
+                }
+                synNodeIndex++;
+            }
+            if (synNodeIndex == baseGrammarSynNodes.length) {
+                return startSynNodeIndex;
+            }
+
+            let varNameSynNode: SyntaxNode = this._getEscapedOrSimpleIdentifier(varSynNode);
+            if (!!varNameSynNode) {
+                if (!dataType) {
+                    dataType = this._getDataType(dataTypeSynNode);
+                }
+                this._pushSymbol(varNameSynNode, ["variable"].concat(!!dataType ? [dataType] : []), { startSynNode: dataTypeSynNode, endSynNode: baseGrammarSynNodes[synNodeIndex] });
+                if (baseGrammarSynNodes[synNodeIndex].type == SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) {
+                    return synNodeIndex + 1;
+                }
+            }
+        }
+
+        return startSynNodeIndex;
+    }
+
+    private _processVariableDeclarationInStatementOrNull(treeCursor: MyTreeCursor): Boolean {
+        let varFound: Boolean = false;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_STATEMENT_ITEM) {
+                if ((synNode.firstChild !== null) &&
+                    (synNode.firstChild.type == SystemVerilogIndexParser.S_BASE_STATEMENT)) {
+                    let res: number = this._processVariableDeclarationInBaseGrammar(0, synNode.firstChild.children);
+                    varFound = res > 0;
+                }
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     !this._isEscapedOrSimpleIdentifier(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_COLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a variable declaration in statement or null ${this._documentPath}`);
+            }
+        });
+        return varFound;
+    }
+
+    private _processTfPortItem(treeCursor: MyTreeCursor) {
+        let dataType: string[] = [];
+        let portDirection: string;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, ["port"].concat(dataType.length > 0 ? dataType.join(' ') : (!!portDirection ? portDirection : [])), { startSynNode: treeCursor.currentNode, endSynNode: treeCursor.currentNode });
+                dataType = [];
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                dataType.push(this._processDataType({ currentNode: synNode }));
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_SIGNING) {
+                dataType.push(synNode.text);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TF_PORT_DIRECTION) {
+                portDirection = synNode.text;
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_VAR_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EQUALS_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EXPRESSION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a ansi or non ansi port declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processTaskNonPortHeader(treeCursor: MyTreeCursor, startSynNode: SyntaxNode): SystemVerilogSymbol {
+        let taskSymbol: SystemVerilogSymbol;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_TASK_IDENTIFIER) {
+                taskSymbol = this._pushContainerSymbol(synNode, [startSynNode.text], { startSynNode: startSynNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     !this._isEscapedOrSimpleIdentifier(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_DOT_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLASS_SCOPE) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a task non port header in ${this._documentPath}`);
+            }
+        });
+        return taskSymbol;
+    }
+
+    private _processTaskHeader(treeCursor: MyTreeCursor, startSynNode: SyntaxNode): SystemVerilogSymbol {
+        let taskSymbol: SystemVerilogSymbol;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_TASK_IDENTIFIER) {
+                taskSymbol = this._pushContainerSymbol(synNode, [startSynNode.text], { startSynNode: startSynNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TF_PORT_ITEM) {
+                this._processTfPortItem({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     !this._isEscapedOrSimpleIdentifier(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_DOT_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLASS_SCOPE) &&
+                     (synNode.type != SystemVerilogIndexParser.S_OPEN_PARANTHESES) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLOSE_PARANTHESES) &&
+                     (synNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a task non port header in ${this._documentPath}`);
+            }
+        });
+        return taskSymbol;
+    }
+
+    private _processBlockItemDeclaration(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_EXPLICIT_DATA_DECLARATION) {
+                this._processExplicitDataDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_LOCALPARAM_DECLARATION) {
+                this._processLocalParamDeclaration({ currentNode: synNode }, []);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_PARAMETER_DECLARATION) {
+                this._processParameterDeclaration({ currentNode: synNode }, []);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_LET_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a block item declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processListOfTfVariableIdentifiers(treeCursor: MyTreeCursor, dataType: string[], defSynNode: SyntaxNode) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (this._isEscapedOrSimpleIdentifier(synNode)) {
+                this._pushSymbol(synNode, ["port"].concat(dataType.length > 0 ? dataType.join(' ') : []), { startSynNode: defSynNode, endSynNode: defSynNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EQUALS_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EXPRESSION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a list of tf variable identifiers in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processTfPortDeclaration(treeCursor: MyTreeCursor) {
+        let dataType: string[] = [];
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_LIST_OF_TF_VARIABLE_IDENTIFIERS) {
+                this._processListOfTfVariableIdentifiers({ currentNode: synNode }, dataType, treeCursor.currentNode);
+                dataType = [];
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE) {
+                dataType.push(this._processDataType({ currentNode: synNode }));
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_SIGNING) {
+                dataType.push(synNode.text);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_TF_PORT_DIRECTION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_VAR_KEYWORD) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a ansi or non ansi port declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processTfItemDeclaration(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_BLOCK_ITEM_DECLARATION) {
+                this._processBlockItemDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TF_PORT_DECLARATION) {
+                this._processTfPortDeclaration({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a tf item declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processTaskBodyDeclaration(treeCursor: MyTreeCursor, startSynNode: SyntaxNode) {
+        let taskSymbol: SystemVerilogSymbol;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_TASK_NON_PORT_HEADER) {
+                taskSymbol = this._processTaskNonPortHeader({ currentNode: synNode }, startSynNode);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TASK_HEADER) {
+                taskSymbol = this._processTaskHeader({ currentNode: synNode }, startSynNode);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_BLOCK_ITEM_DECLARATION) {
+                this._processBlockItemDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TF_ITEM_DECLARATION) {
+                this._processTfItemDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_STATEMENT_OR_NULL) {
+                this._processVariableDeclarationInStatementOrNull({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ENDTASK_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a task body declaration in ${this._documentPath}`);
+            }
+        });
+
+        if (!!taskSymbol) {
+            this._containerStack.pop(this._getEndPosition(treeCursor.currentNode.lastChild));
+        }
+    }
+
+    private _processTaskDeclaration(treeCursor: MyTreeCursor) {
+        let startSynNode: SyntaxNode;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_TASK_KEYWORD) {
+                startSynNode = synNode;
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TASK_BODY_DECLARATION) {
+                this._processTaskBodyDeclaration({ currentNode: synNode }, startSynNode);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_LIFETIME)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a task declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processFunctionNonPortHeader(treeCursor: MyTreeCursor, startSynNode: SyntaxNode): SystemVerilogSymbol {
+        let funcSymbol: SystemVerilogSymbol;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_FUNCTION_IDENTIFIER) {
+                funcSymbol = this._pushContainerSymbol(synNode, [startSynNode.text], { startSynNode: startSynNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE_OR_VOID) {
+                this._processDataTypeOrVoid({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     !this._isEscapedOrSimpleIdentifier(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SIGNING) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) &&
+                     (synNode.type != SystemVerilogIndexParser.S_DOT_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLASS_SCOPE) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a function non port header in ${this._documentPath}`);
+            }
+        });
+        return funcSymbol;
+    }
+
+    private _processFunctionHeader(treeCursor: MyTreeCursor, startSynNode: SyntaxNode): SystemVerilogSymbol {
+        let funcSymbol: SystemVerilogSymbol;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_FUNCTION_IDENTIFIER) {
+                funcSymbol = this._pushContainerSymbol(synNode, [startSynNode.text], { startSynNode: startSynNode, endSynNode: treeCursor.currentNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_DATA_TYPE_OR_VOID) {
+                this._processDataTypeOrVoid({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TF_PORT_ITEM) {
+                this._processTfPortItem({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     !this._isEscapedOrSimpleIdentifier(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SIGNING) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SQUARE_BRACKETS_BLOCK) &&
+                     (synNode.type != SystemVerilogIndexParser.S_DOT_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLASS_SCOPE) &&
+                     (synNode.type != SystemVerilogIndexParser.S_OPEN_PARANTHESES) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLOSE_PARANTHESES) &&
+                     (synNode.type != SystemVerilogIndexParser.S_COMMA_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a function port header in ${this._documentPath}`);
+            }
+        });
+        return funcSymbol;
+    }
+
+    private _processFunctionBodyDeclaration(treeCursor: MyTreeCursor, startSynNode: SyntaxNode) {
+        let funcSymbol: SystemVerilogSymbol;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_FUNCTION_NON_PORT_HEADER) {
+                funcSymbol = this._processFunctionNonPortHeader({ currentNode: synNode }, startSynNode);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_FUNCTION_HEADER) {
+                funcSymbol = this._processFunctionHeader({ currentNode: synNode }, startSynNode);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_BLOCK_ITEM_DECLARATION) {
+                this._processBlockItemDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TF_ITEM_DECLARATION) {
+                this._processTfItemDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_STATEMENT_OR_NULL) {
+                this._processVariableDeclarationInStatementOrNull({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ENDFUNCTION_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a function body declaration in ${this._documentPath}`);
+            }
+        });
+
+        if (!!funcSymbol) {
+            this._containerStack.pop(this._getEndPosition(treeCursor.currentNode.lastChild));
+        }
+    }
+
+    private _processFunctionDeclaration(treeCursor: MyTreeCursor) {
+        let startSynNode: SyntaxNode;
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_FUNCTION_KEYWORD) {
+                startSynNode = synNode;
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_FUNCTION_BODY_DECLARATION) {
+                this._processFunctionBodyDeclaration({ currentNode: synNode }, startSynNode);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_LIFETIME)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a task declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processPackageOrGenerateItemDeclaration(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_NET_DECLARATION) {
+                this._processNetDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_EXPLICIT_DATA_DECLARATION) {
+                this._processExplicitDataDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_TASK_DECLARATION) {
+                this._processTaskDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_FUNCTION_DECLARATION) {
+                this._processFunctionDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_LOCALPARAM_DECLARATION) {
+                this._processLocalParamDeclaration({ currentNode: synNode }, []);
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_PARAMETER_DECLARATION) {
+                this._processParameterDeclaration({ currentNode: synNode }, []);
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CHECKER_DECLARATION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_DPI_IMPORT_EXPORT) &&
+                     (synNode.type != SystemVerilogIndexParser.S_EXTERN_CONSTRAINT_DECLARATION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_CLASS_DECLARATION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) &&
+                     (synNode.type != SystemVerilogIndexParser.S_COVERGROUP_DECLARATION) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ASSERTION_ITEM_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a package or generate item declaration in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processNullStatementInBaseGrammar(currSynNodeIndex: number, baseGrammarPackageItems: SyntaxNode[]): number {
+        if (baseGrammarPackageItems[currSynNodeIndex].type == SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) {
+            return currSynNodeIndex + 1;
+        }
+        return currSynNodeIndex;
+    }
+
+    private _processBaseGrammarPackageItems(baseGrammarPackageItems: SyntaxNode[]) {
+        let currSynNodeIndex: number = 0;
+        let prevSyntaxNodeIndx: number = 0;
+        while (currSynNodeIndex < baseGrammarPackageItems.length) {
+            if (this._isAllAllow(baseGrammarPackageItems[currSynNodeIndex])) {
+                currSynNodeIndex++;
+            }
+
+            if (prevSyntaxNodeIndx == currSynNodeIndex) {
+                currSynNodeIndex = this._processVariableDeclarationInBaseGrammar(currSynNodeIndex, baseGrammarPackageItems);
+            }
+
+            if (prevSyntaxNodeIndx == currSynNodeIndex) {
+                currSynNodeIndex = this._processNullStatementInBaseGrammar(currSynNodeIndex, baseGrammarPackageItems);
+            }
+
+            if (prevSyntaxNodeIndx == currSynNodeIndex) {
+                ConnectionLogger.error(`Unexpected symbol type ${baseGrammarPackageItems[currSynNodeIndex].type} in package item base grammar at index ${baseGrammarPackageItems[currSynNodeIndex].startIndex} in ${this._documentPath}`);
+                currSynNodeIndex++;
+            }
+            prevSyntaxNodeIndx = currSynNodeIndex;
+        }
+    }
+
+    private _processPackageItem(treeCursor: MyTreeCursor) {
+        treeCursor.currentNode.children.forEach(synNode => {
+            if (synNode.type == SystemVerilogIndexParser.S_PACKAGE_OR_GENERATE_ITEM_DECLARATION) {
+                this._processPackageOrGenerateItemDeclaration({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_PACKAGE_EXPORT_DECLARATION) {
+                this._processPackageExportDeclaration({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ANONYMOUS_PROGRAM) &&
+                     (synNode.type != SystemVerilogIndexParser.S_TIMEUNITS_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a package item in ${this._documentPath}`);
+            }
+        });
+    }
+
+    private _processPackageDeclaration(treeCursor: MyTreeCursor): Boolean {
+        if (treeCursor.currentNode.type != SystemVerilogIndexParser.S_PACKAGE_DECLARATION) {
+            return false;
+        }
+
+        let baseGrammarPackageItems: SyntaxNode[] = [];
+        treeCursor.currentNode.children.forEach(synNode => {
+            if ((synNode.firstChild !== null) && (this._isBaseGrammar(synNode.firstChild) || (synNode.firstChild.type == SystemVerilogIndexParser.S_SEMICOLON_OPERATOR))) {
+                baseGrammarPackageItems.push(synNode.firstChild);
+                return;
+            }
+            else if (baseGrammarPackageItems.length > 0) {
+                this._processBaseGrammarPackageItems(baseGrammarPackageItems);
+                baseGrammarPackageItems.length = 0;
+            }
+
+            if (synNode.type == SystemVerilogIndexParser.S_PACKAGE_HEADER) {
+                this._processPackageHeader({ currentNode: synNode });
+            }
+            else if (synNode.type == SystemVerilogIndexParser.S_PACKAGE_ITEM) {
+                this._processPackageItem({ currentNode: synNode });
+            }
+            else if (!this._isAllAllow(synNode) &&
+                     (synNode.type != SystemVerilogIndexParser.S_ENDPACKAGE_DECLARATION)) {
+                ConnectionLogger.error(`Unexpected symbol type ${synNode.type} in a package declaration in ${this._documentPath}`);
+            }
+        });
+
+        if (baseGrammarPackageItems.length > 0) {
+            this._processBaseGrammarPackageItems(baseGrammarPackageItems);
+        }
+
+        this._containerStack.pop(this._getEndPosition(treeCursor.currentNode.lastChild));
+
+        return true;
+    }
+
+    private _ignoreTillSemicolon(treeCursor: MyTreeCursor): Boolean {
+        let _startNode: SyntaxNode = treeCursor.currentNode;
+        while(treeCursor.currentNode.type != SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) {
+            if (treeCursor.currentNode.nextSibling === null) {
+                break;
+            }
+            treeCursor.currentNode = treeCursor.currentNode.nextSibling;
+        }
+        if (treeCursor.currentNode.type == SystemVerilogIndexParser.S_SEMICOLON_OPERATOR) {
+            //ConnectionLogger.log(`DEBUG: ignored symbol type ${treeCursor.currentNode.type} till (${treeCursor.currentNode.endPosition.row}, ${treeCursor.currentNode.endPosition.column})`);
+            return true;
+        }
+        treeCursor.currentNode = _startNode;
+        return false;
+    }
+
+    private _ignoreInstantiation(treeCursor: MyTreeCursor): Boolean {
+        return this._ignoreTillSemicolon(treeCursor);
+    }
+
+    private _ignoreSigDeclaration(treeCursor: MyTreeCursor): Boolean {
+        return this._ignoreTillSemicolon(treeCursor);
+    }
+
+    private _printParsingFailedMessage(treeCursor: MyTreeCursor) {
+        ConnectionLogger.warn(`Parsing failed at node (${treeCursor.currentNode.startPosition.row}, ${treeCursor.currentNode.startPosition.column}) "${treeCursor.currentNode.text}" in ${this._documentPath}`);
+    }
+
+    private _debugPrint(synNode: SyntaxNode, indent: number = 0) {
+        ConnectionLogger.log(`${" ".repeat(indent)}${synNode.type} - (${synNode.startPosition.row}, ${synNode.startPosition.column}, ${synNode.startIndex}), (${synNode.endPosition.row}, ${synNode.endPosition.column}, ${synNode.endIndex}), ${synNode.hasError()}`);
+        synNode.children.forEach(subSynNode => this._debugPrint(subSynNode, indent + 2));
+    }
+
+    public parse(sourceText: string, document: TextDocument, preprocCache: Map<string, PreprocCacheEntry>, postTokens: PostToken[], tokenOrder: TokenOrderEntry[]): Promise<SystemVerilogParser.SystemVerilogFileSymbolsInfo> {
+        if (svIndexParser === null) {
+            return new Promise((resolve, reject) => {
+                svIndexParserInitSubscribers.push({ resolve: resolve, reject: reject });
+            }).then(() => {
+                return this.parse(sourceText, document, preprocCache, postTokens, tokenOrder);
+            }).catch(() => {
+                return undefined;
+            });
+        }
+
+        try {
+            this._document = document;
+            this._documentPath = uriToPath(document.uri);
+            this._preprocCache = preprocCache;
+            this._fileSymbolsInfo = {}; //TBD
+            this._containerStack = new ContainerStack(this._fileSymbolsInfo);
+
+            let rootNode: SyntaxNode = svIndexParser.parse(sourceText).rootNode;
+            this._synLeafNodeRanges = this._calcSyntaxLeafNodeRanges(rootNode, document.uri, sourceText);
+            this._synNodeRangeMap = this._reRangeSyntaxNodes(postTokens, tokenOrder, sourceText, document.uri);
+
+            if (rootNode.hasError()) {
+                //if (document.uri.endsWith('/.sv')) {
+                //    ConnectionLogger.log(`${sourceText}`);
+                //    this._debugPrint(rootNode);
+                //}
+                ConnectionLogger.error(`Errors found while parsing ${document.uri}`);
+            }
+            let treeCursor: MyTreeCursor = { currentNode: rootNode.firstChild };
+            let baseGrammarPackageItems: SyntaxNode[] = [];
+            while(treeCursor.currentNode !== null) {
+                if ((treeCursor.currentNode !== null) && (this._isBaseGrammar(treeCursor.currentNode) || (treeCursor.currentNode.type == SystemVerilogIndexParser.S_SEMICOLON_OPERATOR))) {
+                    baseGrammarPackageItems.push(treeCursor.currentNode);
+                    treeCursor.currentNode = treeCursor.currentNode.nextSibling;
+                    continue;
+                }
+                else if (baseGrammarPackageItems.length > 0) {
+                    this._processBaseGrammarPackageItems(baseGrammarPackageItems);
+                    baseGrammarPackageItems = [];
+                }
+
+                if (this._isAllAllow(treeCursor.currentNode) ||
+                    this._ignoreSymbol(treeCursor, SystemVerilogIndexParser.S_TIMEUNITS_DECLARATION) ||
+                    this._processModuleDeclaration(treeCursor) ||
+                    this._ignoreSymbol(treeCursor, SystemVerilogIndexParser.S_UDP_DECLARATION) ||
+                    this._processInterfaceDeclaration(treeCursor) ||
+                    this._ignoreSymbol(treeCursor, SystemVerilogIndexParser.S_PROGRAM_DECLARATION) ||
+                    this._processPackageDeclaration(treeCursor) ||
+                    this._ignoreSymbol(treeCursor, SystemVerilogIndexParser.S_ANONYMOUS_PROGRAM) ||
+                    this._ignoreSymbol(treeCursor, SystemVerilogIndexParser.S_BIND_DIRECTIVE) ||
+                    this._ignoreSymbol(treeCursor, SystemVerilogIndexParser.S_CONFIG_DECLARATION)) {
+                }
+                else if (treeCursor.currentNode.type == SystemVerilogIndexParser.S_PACKAGE_OR_GENERATE_ITEM_DECLARATION) {
+                    this._processPackageOrGenerateItemDeclaration(treeCursor);
+                }
+                else if (treeCursor.currentNode.type == SystemVerilogIndexParser.S_PACKAGE_EXPORT_DECLARATION) {
+                    this._processPackageExportDeclaration(treeCursor);
+                }
+                else {
+                    this._printParsingFailedMessage(treeCursor);
+                }
+
+                treeCursor.currentNode = treeCursor.currentNode.nextSibling;
+            }
+
+            if (baseGrammarPackageItems.length > 0) {
+                this._processBaseGrammarPackageItems(baseGrammarPackageItems);
+            }
+            //DBG fs.appendFileSync("/tmp/new.json", JSON.stringify({file: this._documentPath, symbols: SystemVerilogParser.fileSymbolsInfoToJson(this._fileSymbolsInfo)}) + ",\n");
+        } catch(error) {
+            ConnectionLogger.error(error);
+            return Promise.resolve(undefined);
+        }
+
+        return Promise.resolve(this._fileSymbolsInfo);
     }
 }

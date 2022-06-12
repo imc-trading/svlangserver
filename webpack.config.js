@@ -21,17 +21,17 @@ const config = {
         vscode: "commonjs vscode"
     },
     resolve: {
-        extensions: ['.ts', '.js']
+        extensions: ['.ts', '...']
     },
     module: {
         rules: [{
             test: /\.ts$/,
             exclude: /node_modules/,
             use: [{
-                loader: 'ts-loader',
+                loader: 'ts-loader'
             }]
         }]
-    },
+    }
 }
 
 module.exports = config;

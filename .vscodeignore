@@ -1,4 +1,5 @@
 .git/
+tmp/
 lib/
 node_modules/
 src/
@@ -11,3 +12,5 @@ tsconfig.json
 **/*.swp
 dist/**/*.map
 dist/**/*.LICENSE.txt
+parsers/
+!parsers/*/tree-sitter-*.wasm

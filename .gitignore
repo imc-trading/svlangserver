@@ -2,3 +2,9 @@ lib
 node_modules
 *.swp
 dist
+tmp
+parsers/*/**
+!parsers/*/*.wasm
+!parsers/*/grammar.js
+!parsers/*/tests/
+!parsers/*/tests/*.sv
