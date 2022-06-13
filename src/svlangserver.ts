@@ -114,9 +114,6 @@ connection.onInitialize((params: InitializeParams) => {
         else if (clientName.toLowerCase().startsWith("emacs")) {
             svindexer.setClientDir(".emacs");
         }
-        else if (clientName.toLowerCase().startsWith("neovim")) {
-            svindexer.setClientDir(".nvim");
-        }
         else {
             svindexer.setClientDir(".svlangserver");
         }
