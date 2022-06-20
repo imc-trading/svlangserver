@@ -817,7 +817,7 @@ export const svcompletion_grammar = {
     ParameterPortList: {
         patterns: [
             {
-                match: r`(#\()`,
+                match: r`(#\s*\()`,
                 tokens: ["operator.hash_open_parantheses.systemverilog"],
                 push: "ParameterPortListBody"
             }
@@ -841,7 +841,7 @@ export const svcompletion_grammar = {
     PortList: {
         patterns: [
             {
-                match: r`((?<!#)\()`,
+                match: r`((?<!#\s*)\()`,
                 tokens: ["operator.open_parantheses.systemverilog"],
                 push: "PortListBody"
             }
