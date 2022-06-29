@@ -324,7 +324,7 @@ const sv_completion_tick: string[][] = [
     ["else", "`else", "else\n${0}"],
     ["include", "filename\"", "${1:filename}\""],
     ["line", " level", " ${3:level}"],
-    ["unconnected_drive", "`unconnected_drive", "unconnected_drive\n$TM_SELECTED_TEXT\n`nounconnected_drive"],
+    ["unconnected_drive", "`unconnected_drive", "unconnected_drive ${1|pull1,pull0|}\n$TM_SELECTED_TEXT\n`nounconnected_drive"],
     ["pragma", "`pragma pragma_name pragma_expression", "pragma ${1:pragma_name}${2: ${3:pragma_expression}}"],
     ["resetall", "`resetall", "resetall"],
     ["timescale", "`timescale time_unit/time_precision", "timescale ${1:time_unit}${2|s,ms,us,ns,ps,fs|}/${3:time_precision}${4|s,ms,us,ns,ps,fs|}"],
