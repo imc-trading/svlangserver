@@ -26,5 +26,7 @@ else {
     if (!comm_mode) {
         process.argv.push('--stdio');
     }
+    process.env.DEBUG_SVLANGSERVER = args.find(s => s == '--debug') != undefined;
+
     const server = require('../lib/svlangserver')
 }

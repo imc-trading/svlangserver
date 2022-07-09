@@ -77,6 +77,7 @@ const ReportHierarchyCommand = "systemverilog.report_hierarchy"
 // Also include all preview / proposed LSP features.
 let connection = createConnection(ProposedFeatures.all);
 ConnectionLogger.setConnection(connection);
+ConnectionLogger.log(`INFO: Debug mode = ${process.env.DEBUG_SVLANGSERVER}`);
 
 // client capabilities
 let clientName: string;
