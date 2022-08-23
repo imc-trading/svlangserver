@@ -180,6 +180,9 @@ export class SystemVerilogSymbol {
                 symRange = this.symLocation;
             }
 
+            if (symURI.indexOf("file://") != 0) {
+                symURI = "".concat("file://", symURI);
+            }
             return Location.create(symURI, symRange);
         } catch(error) {
             ConnectionLogger.error(error);
