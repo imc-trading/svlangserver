@@ -43,6 +43,7 @@ The code has been tested to work with below tool versions
   * Install lsp-mode
   * `npm install -g @imc-trading/svlangserver`
   * Update .emacs/init.el
+  * (Optional) Install [verilog-ext](https://github.com/gmlarumbe/verilog-ext.git) to automatically setup `eglot`/`lsp`
 - For neovim
   * Install [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig)
   * (Optional) Install [nlsp-settings.nvim](https://github.com/tamago324/nlsp-settings.nvim)
@@ -192,6 +193,13 @@ NOTE: This has been tested with npm version 6.14.13 and node version 14.17.1
                    (lsp-clients-svlangserver-includeIndexing . ("src/**/*.{sv,svh}"))
                    (lsp-clients-svlangserver-excludeIndexing . ("src/test/**/*.{sv,svh}"))))
     ```
+  * Configuration using [verilog-ext](https://github.com/gmlarumbe/verilog-ext.git)
+    ```elisp
+    (require 'verilog-ext)
+    (verilog-ext-mode-setup)
+    (verilog-ext-eglot-set-server 've-svlangserver) ;`eglot' config
+    (verilog-ext-lsp-set-server 've-svlangserver)   ; `lsp' config
+    ```
 - Example settings for neovim
   * Without nlsp-settings.nvim
     + Update your init.lua
@@ -301,6 +309,10 @@ NOTE: This has been tested with npm version 6.14.13 and node version 14.17.1
 ### Emacs usage
   * `lsp-clients-svlangserver-build-index` command should rerun the indexing.
   * `lsp-clients-svlangserver-report-hierarchy` command should do the job. If invoked with an active slection, the module name is pre-filled with the selection.
+
+  Previous commands can be run with `eglot` and `verilog-ext`:
+  * `verilog-ext-eglot-svlangserver-build-index`
+  * `verilog-ext-eglot-svlangserver-report-hierarchy`
 
 ### Neovim usage
   * `:SvlangserverBuildIndex` command should rerun the indexing.
