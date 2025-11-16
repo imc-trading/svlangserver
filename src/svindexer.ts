@@ -75,7 +75,7 @@ type UserDefineType = { name: string, def: string, tokens: GrammarToken[] };
 export class SystemVerilogIndexer {
     private _rootPath: string | null;
     private _clientDir: string | null;
-    private _srcFiles: string[];
+    private _srcFiles: string[] = [];
     private _mustSrcFiles: Set<string> = new Set();
     private _libFiles: string[] = [];
     private _preprocCache: Map<string, PreprocCacheEntry> = new Map();
