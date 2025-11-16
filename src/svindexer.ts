@@ -474,7 +474,7 @@ export class SystemVerilogIndexer {
         for (let libfile of [...new Set(this._libFiles.values())]) {
             this._optionsFileContent.push('-v ' + libfile);
         }
-        for (let incdir of [...new Set(this._srcFiles.map(file => path.dirname(file))), ...new Set(this._srcFiles.map(file => path.dirname(file)))]) {
+        for (let incdir of [...new Set(this._srcFiles.map(file => path.dirname(file)))]) {
             this._optionsFileContent.push('+incdir+' + incdir);
         }
         fsWriteFile(this.getLinterOptionsFile(), this._optionsFileContent.join('\n'))
