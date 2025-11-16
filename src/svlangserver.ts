@@ -189,7 +189,7 @@ function getSettings() : Promise<Object> {
 }
 
 let settingsInitialized: Boolean = false;
-function updateSettings(change, updateIfNotInitialized: Boolean = false) {
+function updateSettings(change, forceUpdate: Boolean = false) {
     let oldSettings: Map<string, any> = new Map<string, any>();
     for (let [prop, val] of settings.entries()) {
         oldSettings.set(prop, val);
@@ -212,20 +212,20 @@ function updateSettings(change, updateIfNotInitialized: Boolean = false) {
         ConnectionLogger.log(`INFO: settings[${prop}] = ${settings.get(prop)}`);
     }
 
-    let forceUpdate: Boolean = !settingsInitialized && updateIfNotInitialized;
-    let definesChanged: Boolean = forceUpdate || !isStringListEqual(oldSettings.get("systemverilog.defines"), settings.get("systemverilog.defines"))
-    if (forceUpdate || definesChanged ||
-        !isStringListEqual(oldSettings.get("systemverilog.includeIndexing"), settings.get("systemverilog.includeIndexing")) ||
-        !isStringListEqual(oldSettings.get("systemverilog.mustIncludeIndexing"), settings.get("systemverilog.mustIncludeIndexing")) ||
-        !isStringListEqual(oldSettings.get("systemverilog.excludeIndexing"), settings.get("systemverilog.excludeIndexing"))) {
-        if (definesChanged) {
-            svindexer.setDefines(settings.get("systemverilog.defines"));
-        }
+    forceUpdate = forceUpdate || !settingsInitialized;
+    let definesChanged: Boolean = !isStringListEqual(oldSettings.get("systemverilog.defines"), settings.get("systemverilog.defines"));
+    let includeChanged: Boolean = !isStringListEqual(oldSettings.get("systemverilog.includeIndexing"), settings.get("systemverilog.includeIndexing")) ||
+        !isStringListEqual(oldSettings.get("systemverilog.mustIncludeIndexing"), settings.get("systemverilog.mustIncludeIndexing"));
+    let excludeChanged: Boolean = !isStringListEqual(oldSettings.get("systemverilog.excludeIndexing"), settings.get("systemverilog.excludeIndexing"));
+    let libraryChanged: Boolean = !isStringListEqual(oldSettings.get("systemverilog.libraryIndexing"), settings.get("systemverilog.libraryIndexing"));
+
+    if (forceUpdate || definesChanged) {
+        svindexer.setDefines(settings.get("systemverilog.defines"));
+    }
+    if (forceUpdate || definesChanged || includeChanged || excludeChanged) {
         svindexer.index(settings.get("systemverilog.includeIndexing"), settings.get("systemverilog.mustIncludeIndexing"), settings.get("systemverilog.excludeIndexing"));
     }
-
-    if (forceUpdate ||
-        !isStringListEqual(oldSettings.get("systemverilog.libraryIndexing"), settings.get("systemverilog.libraryIndexing"))) {
+    if (forceUpdate || libraryChanged || excludeChanged) {
         svindexer.setLibraries(settings.get("systemverilog.libraryIndexing"), settings.get("systemverilog.excludeIndexing"));
     }
 
@@ -241,7 +241,11 @@ function updateSettings(change, updateIfNotInitialized: Boolean = false) {
 connection.onInitialized(() => {
     try {
         getSettings()
-            .then(initSettings => updateSettings(initSettings, true))
+            .then(initSettings => {
+                if (!settingsInitialized) {
+                    updateSettings(initSettings);
+                }
+            })
             .catch(error => {
                 ConnectionLogger.error(error);
             });
