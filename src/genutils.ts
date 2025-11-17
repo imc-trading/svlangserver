@@ -109,7 +109,7 @@ export function isStringListEqual(stringList1: string[], stringList2: string[]):
         }
 
         let sortedStringList1: string[] = stringList1.sort((one, two) => (one > two ? -1 : 1));
-        let sortedStringList2: string[] = stringList1.sort((one, two) => (one > two ? -1 : 1));
+        let sortedStringList2: string[] = stringList2.sort((one, two) => (one > two ? -1 : 1));
         for (let i: number = 0; i < stringList1.length; i++) {
             if (sortedStringList1[i] != sortedStringList2[i]) {
                 return false;
