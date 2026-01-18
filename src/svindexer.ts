@@ -51,7 +51,7 @@ import {
 } from './genutils';
 
 const { fork } = require('child_process');
-const glob = require('glob');
+const { glob } = require('glob');
 const path = require('path');
 const { performance } = require('perf_hooks');
 
@@ -120,17 +120,19 @@ export class SystemVerilogIndexer {
         this._userDefines = defines.map(s => s.split("=", 2)).map(s => { return { name: s[0], def: s[1], tokens: s[1] == undefined ? [] : SystemVerilogPreprocessor.tokenize(s[1]) }; });
     }
 
-    private _indexGlob(includes: string[], excludes: string[], globOptions, func) {
+    private _indexGlob(includes: string[], excludes: string[], globOptions) {
         const pattern = includes.length == 1 ? includes[0] : '{' + includes.join(",") + '}';
-        return glob(pattern, !!globOptions ? globOptions : {cwd: this._rootPath, ignore: excludes, follow: true, realpath: true}, func);
+        const options = !!globOptions ? globOptions : {cwd: this._rootPath, nodir: true, ignore: excludes, follow: true, realpath: true};
+        return {
+            promise: glob(pattern, options),
+            options: options
+        };
     }
 
     setLibraries(libraries: string[], excludes: string[]) {
-        this._indexGlob(libraries, excludes, undefined, (err, files) => {
-            if (err) {
-                ConnectionLogger.error(err);
-            }
-            else if (files.length > 0) {
+        this._indexGlob(libraries, excludes, undefined).promise
+        .then((files: string[]) => {
+            if (files.length > 0) {
                 if (!isStringListEqual(files, this._libFiles)) {
                     this._libFiles = files;
                     this._generateVerilatorOptionsFile();
@@ -140,6 +142,9 @@ export class SystemVerilogIndexer {
                 ConnectionLogger.log("No library files found");
                 this._libFiles = [];
             }
+        })
+        .catch(err => {
+            ConnectionLogger.error(err);
         });
     }
 
@@ -162,32 +167,16 @@ export class SystemVerilogIndexer {
 
     index(includes: string[], mustIncludes: string[], excludes: string[]) {
         let _filesGlob = (callBack) => {
-            let _incFiles: string[] = undefined;
-            let _mustFiles: string[] = undefined;
+            let _incGlob = this._indexGlob(includes, excludes, undefined);
+            let _mustGlob = this._indexGlob(mustIncludes, excludes, _incGlob.options);
 
-            let _incGlob = this._indexGlob(includes, excludes, undefined, (err, files) => {
-                if (err) {
+            Promise.all([_incGlob.promise, _mustGlob.promise])
+                .then(([incFiles, mustFiles]) => {
+                    callBack(null, incFiles, mustFiles);
+                })
+                .catch(err => {
                     callBack(err, [], []);
-                    return;
-                }
-
-                _incFiles = files;
-                if (_mustFiles != undefined) {
-                    callBack(err, _incFiles, _mustFiles);
-                }
-            });
-
-            this._indexGlob(mustIncludes, excludes, _incGlob.options, (err, files) => {
-                if (err) {
-                    callBack(err, [], []);
-                    return;
-                }
-
-                _mustFiles = files;
-                if (_incFiles != undefined) {
-                    callBack(err, _incFiles, _mustFiles);
-                }
-            });
+                });
         };
 
         let _index = (srcFiles: string[]) => {

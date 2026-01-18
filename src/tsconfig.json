@@ -6,6 +6,7 @@
 		"moduleResolution": "node",
 		"sourceMap": false,
 		"declaration": true,
+		"skipLibCheck": true,
 		"lib" : [ "es2019" ],
 		"outDir": "../lib"
 	}

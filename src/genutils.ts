@@ -66,9 +66,9 @@ export function uriToPath(uri: string): string {
     }
 };
 
-export function pathToUri(path: string): string {
+export function pathToUri(file_path: string): string {
     try {
-        return(URI.file(path).toString());
+        return(URI.file(path.resolve(file_path)).toString());
     } catch (error) {
         ConnectionLogger.error(error);
         return undefined;

@@ -80,7 +80,7 @@ function parseVerilatorDiagnostics(stdout: string, stderr: string, file: string,
                 i += 2;
             }
 
-            if ((lineNum != NaN) && (colNum != NaN)) {
+            if (!isNaN(lineNum) && !isNaN(colNum)) {
                 diagnostics.push({
                     severity: severity,
                     range: Range.create(lineNum, colNum, lineNum, colNumEnd < colNum ? colNum : colNumEnd),
@@ -139,7 +139,7 @@ function parseIcarusDiagnostics (stdout: string, stderr: string, file: string, w
                 continue;
             }
 
-            if (lineNum != NaN) {
+            if (!isNaN(lineNum)) {
                 diagnostics.push({
                     severity: severity,
                     range: Range.create(lineNum, 0, lineNum, 0),

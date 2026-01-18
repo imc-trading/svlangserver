@@ -62,9 +62,8 @@ export function activate(context: ExtensionContext) {
     };
 
     context.subscriptions.push(commands.registerCommand('systemverilog.get_hierarchy', getHierCmdHandler));
-    context.subscriptions.push(client.start());
 
-    client.onReady().then(() => {
+    client.start().then(() => {
         workspace.onDidChangeConfiguration(() => {
             client.sendNotification('workspace/didChangeConfiguration', getSettings(client));
         });
