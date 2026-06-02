@@ -83,12 +83,18 @@
             {
                 "language": "systemverilog",
                 "scopeName": "source.systemverilog",
-                "path": "./syntaxes/systemverilog.tmLanguage.json"
+                "path": "./syntaxes/systemverilog.tmLanguage.json",
+                "unbalancedBracketScopes": [
+                    "meta.item.wait-fork.systemverilog"
+                ]
             },
             {
                 "language": "verilog",
                 "scopeName": "source.systemverilog",
-                "path": "./syntaxes/systemverilog.tmLanguage.json"
+                "path": "./syntaxes/systemverilog.tmLanguage.json",
+                "unbalancedBracketScopes": [
+                    "meta.item.wait-fork.systemverilog"
+                ]
             },
             {
                 "scopeName": "markdown.verilog.codeblock",

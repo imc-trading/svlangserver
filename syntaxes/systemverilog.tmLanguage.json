@@ -366,6 +366,9 @@
           }
         },
         {
+          "include": "#sv-control-wait-fork"
+        },
+        {
           "include": "#sv-control"
         },
         {
@@ -404,6 +407,18 @@
           "name": "keyword.control.systemverilog"
         }
       }
+    },
+    "sv-control-wait-fork": {
+      "match": "[ \\t\\n]*\\b(wait)[ \\t\\n]+(fork)\\b",
+      "captures": {
+        "1": {
+          "name": "keyword.control.systemverilog"
+        },
+        "2": {
+          "name": "keyword.control.systemverilog"
+        }
+      },
+      "name": "meta.item.wait-fork.systemverilog"
     },
     "sv-control-begin": {
       "match": "[ \\t\\n]*\\b(begin|fork)\\b(?:[ \\t\\n]*(:)[ \\t\\n]*([a-zA-Z_][a-zA-Z0-9_$]*))?",
