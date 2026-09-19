@@ -50,6 +50,7 @@ The code has been tested to work with below tool versions
   * `npm install -g @imc-trading/svlangserver`
   * Create .svlangserver directory in your project root directory
   * Update LSP settings
+- For nixos binary use `nix run https://github.com/imc-trading/svlangserver` or add it to your flake inputs and as a package int your system configuration or home manager configuration.
 
 To get the snippets, git clone this repo and copy the snippets directory wherever applicable
 
