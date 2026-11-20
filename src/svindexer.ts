@@ -129,16 +129,14 @@ export class SystemVerilogIndexer {
         this._indexGlob(libraries, excludes, undefined, (err, files) => {
             if (err) {
                 ConnectionLogger.error(err);
+                return;
             }
-            else if (files.length > 0) {
-                if (!isStringListEqual(files, this._libFiles)) {
-                    this._libFiles = files;
-                    this._generateVerilatorOptionsFile();
-                }
-            }
-            else {
+            if (files.length === 0) {
                 ConnectionLogger.log("No library files found");
-                this._libFiles = [];
+            }
+            if (!isStringListEqual(files, this._libFiles)) {
+                this._libFiles = files;
+                this._generateVerilatorOptionsFile();
             }
         });
     }
